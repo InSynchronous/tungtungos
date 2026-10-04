@@ -7,6 +7,12 @@ TTOS Kernel. Userspace begins in `main.cpp`
 extern "C" void kernel_start();
 
 namespace ttos {
+/**
+ * @brief Reads a byte from the PS/2 keyboard.
+ *
+ * @return The keyboard scan code.
+ */
+char Keyboard_Read();
 
 /* *
  * @brief Set's the color of the VGA cursor in the text buffer
