@@ -7,6 +7,14 @@ TTOS Kernel. Userspace begins in `main.cpp`
 extern "C" void kernel_start();
 
 namespace ttos {
+
+/* *
+ * @brief Set's the color of the VGA cursor in the text buffer
+ *
+ * @param color The color to set the cursor to
+ */
+void VGA_SetColor(unsigned char color);
+
 /**
  * @brief Writes a single character to the VGA text buffer.
  *
@@ -17,7 +25,8 @@ namespace ttos {
 void VGA_Write(const char character, int x, int y);
 
 /**
- * @brief Prints a null-terminated string to the VGA text buffer.
+ * @brief Prints a null-terminated string to the VGA text buffer. Automatically
+ * wraps text by character.
  *
  * @param string The string to print.
  * @param x The horizontal starting position, from 0 to 79.
@@ -33,5 +42,5 @@ void VGA_Clear();
 /**
  * @brief Halts the CPU indefinitely.
  */
-void halt();
+void CPU_halt();
 } // namespace ttos
