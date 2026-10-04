@@ -21,7 +21,7 @@ start:
     mov es, ax
 
     mov ah, 0x02       ; BIOS read
-    mov al, 1          ; 1 sector
+    mov al, 4          ; 4 sector
     mov ch, 0
     mov cl, 2          ; sector 2
     mov dh, 0
