@@ -1,15 +1,99 @@
 #include "ttoskernel.h"
-
 int doMath(const char *expression) {
     unsigned int pointer = 0;
     char c = expression[pointer];
-    int result = 67;
 
-    while (c != '\0') {
+    char num1[20];
+    num1[0] = '\0';
+
+    char num2[20];
+    num2[0] = '\0';
+
+    enum seleted_tung {
+        tung_tung_sa_add,
+        tung_tung_sa_subtract,
+        tung_tung_sa_multiply,
+        tung_tung_sa_divide, // we yes we hitting up #DE flag for /0
+    };
+
+    seleted_tung selection = tung_tung_sa_add;
+
+    char *selected = num1;
+    unsigned int selectedPointer = 0;
+
+    while (expression[pointer] != '\0') {
         c = expression[pointer++];
+
+        if (c == ' ') {
+            continue;
+        }
+
+        // Operator
+        if (c == '+') {
+            selection = tung_tung_sa_add;
+            selected = num2;
+            selectedPointer = 0;
+            continue;
+        }
+
+        if (c == '-') {
+            selection = tung_tung_sa_subtract;
+            selected = num2;
+            selectedPointer = 0;
+            continue;
+        }
+
+        if (c == 'x') {
+            selection = tung_tung_sa_multiply;
+            selected = num2;
+            selectedPointer = 0;
+            continue;
+        }
+
+        if (c == '/') {
+            selection = tung_tung_sa_divide;
+            selected = num2;
+            selectedPointer = 0;
+            continue;
+        }
+
+        // Number
+        if (c >= '0' && c <= '9') {
+            if (selectedPointer < 19) {
+                selected[selectedPointer++] = c;
+                selected[selectedPointer] = '\0';
+            }
+        }
     }
 
-    return result;
+    int n1 = 0;
+    int n2 = 0;
+
+    for (unsigned int i = 0; num1[i] != '\0'; i++) {
+        n1 = n1 * 10 + (num1[i] - '0');
+    }
+
+    for (unsigned int i = 0; num2[i] != '\0'; i++) {
+        n2 = n2 * 10 + (num2[i] - '0');
+    }
+
+    switch (selection) {
+    case tung_tung_sa_add:
+        return n1 + n2;
+
+    case tung_tung_sa_subtract:
+        return n1 - n2;
+
+    case tung_tung_sa_multiply:
+        return n1 * n2;
+
+    case tung_tung_sa_divide:
+        if (n2 == 0)
+            ; // GG rip ur cpu idiot
+        return n1 / n2;
+    }
+
+    return 0;
 }
 
 void int_to_string(int value, char *buffer) {
