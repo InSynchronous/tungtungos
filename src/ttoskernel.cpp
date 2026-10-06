@@ -84,4 +84,15 @@ char Keyboard_Read() {
     return keyboard_map[scan_code];
 }
 
+void PIT_Init(unsigned int frequency) {
+    unsigned int divisor = 1193182 / frequency;
+
+    // init
+    outb(0x43, 0x36);
+    // send our divisor low byte
+    outb(0x40, divisor & 0xFF);
+    // send our divisor high byte
+    outb(0x40, (divisor >> 8) & 0xFF);
+}
+
 } // namespace ttos

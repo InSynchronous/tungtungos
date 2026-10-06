@@ -7,6 +7,14 @@ TTOS Kernel. Userspace begins in `main.cpp`
 extern "C" void kernel_start();
 
 namespace ttos {
+
+/*
+ * @brief Initializes the Programmable Interval Timer
+ *
+ * @param frequency The target frequency for the PIT
+ */
+void PIT_Init(unsigned int frequency);
+
 /**
  * @brief Reads a byte from the PS/2 keyboard.
  *
