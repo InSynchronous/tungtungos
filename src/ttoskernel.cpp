@@ -10,7 +10,45 @@ extern "C" void kernel_start() {
     ttos::VGA_Clear();
     ttos::VGA_Print(string, 0, 0);
 
+    ttos::IDT_Init();
+    ttos::PIC_Init();
+
+    asm volatile("sti");
+
     program_start();
+}
+
+extern "C" void kernel_panic(KernelFault fault) {
+    ttos::VGA_SetColor(0x4F); // white text red background
+
+    for (int y = 0; y < 25; y++) {
+        for (int x = 0; x < 80; x++) {
+            ttos::VGA_Write(' ', x, y);
+        }
+    }
+
+    ttos::VGA_Print("TTOS KERNEL PANIC", 30, 10);
+    ttos::VGA_Print("A fatal error has occurred.", 27, 12);
+    switch (fault) {
+    case KernelFault::DivideByZero:
+        ttos::VGA_Print("Division by zero (#DE)", 27, 13);
+        break;
+
+    case KernelFault::GeneralProtection:
+        ttos::VGA_Print("General Protection Fault (#GP)", 27, 13);
+        break;
+
+    case KernelFault::PageFault:
+        ttos::VGA_Print("Page Fault (#PF)", 27, 13);
+        break;
+    }
+    ttos::VGA_Print("The system has been halted.", 27, 14);
+
+    ttos::CPU_halt();
+}
+
+extern "C" void keyboard_handler() {
+    ttos::VGA_Print("Inturrupt recieved. Over and out", 10, 10);
 }
 
 namespace ttos {
@@ -26,7 +64,7 @@ unsigned char inb(unsigned short port) {
 }
 
 void outb(unsigned short port, unsigned char value) {
-    asm volatile("outb %0, %1" : "=a"(value) : "Nd"(port));
+    asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
 static const char keyboard_map[128] = {
@@ -93,6 +131,69 @@ void PIT_Init(unsigned int frequency) {
     outb(0x40, divisor & 0xFF);
     // send our divisor high byte
     outb(0x40, (divisor >> 8) & 0xFF);
+}
+
+// IDT system!
+struct IDTEntry idt[256];
+struct IDTPointer idt_ptr;
+
+void IDT_SetGate(unsigned char vector, unsigned int handler) {
+    idt[vector].offset_low = handler & 0xFFFF;
+    idt[vector].selector = 0x08; // gdt code
+    idt[vector].zero = 0;
+    idt[vector].type_attr = 0x8E;
+    idt[vector].offset_high = (handler >> 16) & 0xFFFF;
+}
+
+void IDT_Load() {
+    idt_ptr.limit = sizeof(idt) - 1;
+    idt_ptr.base = (unsigned int)&idt; // ignore lsp warning; 32 bit code
+
+    asm volatile("lidt %0" : : "m"(idt_ptr));
+}
+
+void IDT_Init() {
+    for (int i = 0; i < 256; i++) {
+        idt[i].offset_low = 0;
+        idt[i].selector = 0;
+        idt[i].zero = 0;
+        idt[i].type_attr = 0;
+        idt[i].offset_high = 0;
+    }
+
+    IDT_SetGate(0x21, (unsigned int)keyboard_isr);
+    IDT_SetGate(0x00, (unsigned int)divide_error_isr);
+    IDT_SetGate(0x0D, (unsigned int)general_protection_isr);
+    IDT_SetGate(0x0E, (unsigned int)page_fault_isr);
+
+    IDT_Load();
+}
+
+// Default PIC is overlapping with actual CPU exception IRQs (#GP #PF #DE)
+// KB -> PIC -> IDT -> Function
+void PIC_Init() {
+    outb(0x20, 0x11);
+    outb(0xA0, 0x11);
+
+    // Vector offsets
+    outb(0x21, 0x20); // remap irq0 to 0x20
+    outb(0xA1, 0x28); // remap irq8 to 0x28
+
+    // Wiring
+    outb(0x21, 0x04);
+    outb(0xA1, 0x02);
+
+    // 8086 mode
+    outb(0x21, 0x01);
+    outb(0xA1, 0x01);
+
+    // mask all
+    outb(0x21, 0xFF);
+    outb(0xA1, 0xFF);
+
+    // UNMASK keyboard
+    // todo: more stuff; kernel panics
+    outb(0x21, 0xFD);
 }
 
 } // namespace ttos

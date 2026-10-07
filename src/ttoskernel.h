@@ -6,7 +6,40 @@ TTOS Kernel. Userspace begins in `main.cpp`
 
 extern "C" void kernel_start();
 
+// implemented in assembly; inturrupt subroutine
+// needs to be asm in order to push all the registers to the stack since we get
+// inturrupted by something (keyboard press)
+// pusha and popa are the instructions of choice
+
+extern "C" void keyboard_isr();
+extern "C" void keyboard_handler(); // called by isr
+
+extern "C" void divide_error_isr();
+extern "C" void general_protection_isr();
+extern "C" void page_fault_isr();
+
+enum class KernelFault : unsigned int {
+    DivideByZero = 0,
+    GeneralProtection = 1,
+    PageFault = 2
+};
+
+extern "C" void kernel_panic(KernelFault fault); // called by isr
+
 namespace ttos {
+
+struct IDTEntry {
+    unsigned short offset_low;
+    unsigned short selector;
+    unsigned char zero;
+    unsigned char type_attr;
+    unsigned short offset_high;
+} __attribute__((packed));
+
+struct IDTPointer {
+    unsigned short limit;
+    unsigned int base;
+} __attribute__((packed));
 
 /*
  * @brief Initializes the Programmable Interval Timer
@@ -57,4 +90,28 @@ void VGA_Clear();
  * @brief Halts the CPU indefinitely.
  */
 void CPU_halt();
+
+/**
+ * @brief Sets an entry in the Interrupt Descriptor Table.
+ *
+ * @param vector Interrupt vector number (0-255).
+ * @param handler Address of the interrupt handler.
+ */
+void IDT_SetGate(unsigned char vector, unsigned int handler);
+
+/**
+ * @brief Initializes and loads the Interrupt Descriptor Table.
+ */
+void IDT_Init();
+
+/**
+ * @brief Loads the Interrupt Descriptor Table into the CPU.
+ */
+void IDT_Load();
+
+/**
+ * @brief Initializes the programmable interrupt contrroller
+ */
+void PIC_Init();
+
 } // namespace ttos
