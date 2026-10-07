@@ -10,6 +10,8 @@ extern "C" void kernel_start() {
     ttos::VGA_Clear();
     ttos::VGA_Print(string, 0, 0);
 
+    ttos::Paging_Init();
+
     ttos::IDT_Init();
     ttos::PIC_Init();
 
@@ -39,11 +41,18 @@ extern "C" void kernel_panic(KernelFault fault) {
         break;
 
     case KernelFault::PageFault:
+        unsigned int fault_address;
+
+        asm volatile("mov %%cr2, %0" : "=r"(fault_address));
+
         ttos::VGA_Print("Page Fault (#PF)", 27, 13);
+        ttos::VGA_Print("Fault address:", 27, 14);
+        ttos::VGA_PrintHex(fault_address, 42, 14);
+
         break;
     }
-    ttos::VGA_Print("The system has been halted.", 27, 14);
 
+    ttos::VGA_Print("The system has been halted.", 27, 16);
     ttos::CPU_halt();
 }
 
@@ -93,6 +102,17 @@ void VGA_Write(const char character, int x, int y) {
 void VGA_Print(const char *string, int x, int y) {
     for (int i = 0; string[i] != '\0'; i++) {
         VGA_Write(string[i], x + i, y);
+    }
+}
+
+void VGA_PrintHex(unsigned int value, int x, int y) {
+    const char *hex = "0123456789ABCDEF";
+
+    VGA_Write('0', x, y);
+    VGA_Write('x', x + 1, y);
+
+    for (int i = 0; i < 8; i++) {
+        VGA_Write(hex[(value >> ((7 - i) * 4)) & 0xF], x + 2 + i, y);
     }
 }
 
@@ -194,6 +214,37 @@ void PIC_Init() {
     // UNMASK keyboard
     // todo: more stuff; kernel panics
     outb(0x21, 0xFD);
+}
+
+// Paging
+alignas(4096) unsigned int page_directory[1024];
+alignas(4096) unsigned int page_table[1024];
+
+void Paging_Init() {
+    // clear table out
+    for (int i = 0; i < 1024; i++) {
+        page_table[i] = 0;
+        page_directory[i] = 0;
+    }
+
+    for (int i = 0; i < 1024; i++) {
+        page_table[i] = (i * 0x1000) | 0x3;
+    }
+
+    // directory 0 = table
+    page_directory[0] = ((unsigned int)page_table) | 0x3;
+
+    // load page directory into CR3
+    asm volatile("mov %0, %%cr3" : : "r"(page_directory) : "memory");
+
+    unsigned int cr0;
+
+    asm volatile("mov %%cr0, %0" : "=r"(cr0));
+
+    // set the bit high
+    cr0 |= 0x80000000; // CR0.PG
+
+    asm volatile("mov %0, %%cr0" : : "r"(cr0) : "memory");
 }
 
 } // namespace ttos

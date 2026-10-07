@@ -82,6 +82,18 @@ void VGA_Write(const char character, int x, int y);
 void VGA_Print(const char *string, int x, int y);
 
 /**
+ * @brief Prints an unsigned integer in hexadecimal format to the VGA display.
+ *
+ * The value is displayed as an 8-digit hexadecimal number prefixed with
+ * "0x".
+ *
+ * @param value The unsigned integer to print.
+ * @param x The horizontal VGA character position.
+ * @param y The vertical VGA character position.
+ */
+void VGA_PrintHex(unsigned int value, int x, int y);
+
+/**
  * @brief Clears the entire VGA text screen.
  */
 void VGA_Clear();
@@ -113,5 +125,10 @@ void IDT_Load();
  * @brief Initializes the programmable interrupt contrroller
  */
 void PIC_Init();
+
+/**
+ * @brief Initializes the page tables & directory. enables cr0.pg
+ */
+void Paging_Init();
 
 } // namespace ttos

@@ -122,6 +122,16 @@ void int_to_string(int value, char *buffer) {
 }
 
 extern "C" void program_start() {
+    volatile unsigned int *bad = (unsigned int *)0xDEADBEEF;
+
+    // write to an unmapped addr
+    *bad = 123;
+
+    while (1)
+        asm volatile("hlt");
+}
+/*
+extern "C" void program_start() {
     char buffer[100];
     char result_str[100];
 
@@ -160,3 +170,4 @@ extern "C" void program_start() {
         }
     }
 }
+*/
