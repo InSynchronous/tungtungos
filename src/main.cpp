@@ -1,4 +1,3 @@
-#include "ttoskernel.h"
 int doMath(const char *expression) {
     unsigned int pointer = 0;
     char c = expression[pointer];
@@ -121,88 +120,130 @@ void int_to_string(int value, char *buffer) {
     buffer[j] = '\0';
 }
 
-static inline void syscall0(unsigned int number) {
-    asm volatile("int $0x80" : : "a"(number));
+static inline unsigned int syscall0(unsigned int number) {
+    unsigned int result;
+
+    asm volatile("int $0x80" : "=a"(result) : "a"(number) : "memory");
+
+    return result;
 }
 
-static inline void syscall1(unsigned int number, unsigned int arg1) {
-    asm volatile("int $0x80" : : "a"(number), "b"(arg1) : "memory");
-}
+static inline unsigned int syscall1(unsigned int number, unsigned int arg1) {
+    unsigned int result;
 
-static inline void syscall2(unsigned int number, unsigned int arg1,
-                            unsigned int arg2) {
-    asm volatile("int $0x80" : : "a"(number), "b"(arg1), "c"(arg2) : "memory");
-}
-
-static inline void syscall3(unsigned int number, unsigned int arg1,
-                            unsigned int arg2, unsigned int arg3) {
     asm volatile("int $0x80"
-                 :
+                 : "=a"(result)
+                 : "a"(number), "b"(arg1)
+                 : "memory");
+
+    return result;
+}
+
+static inline unsigned int syscall2(unsigned int number, unsigned int arg1,
+                                    unsigned int arg2) {
+    unsigned int result;
+
+    asm volatile("int $0x80"
+                 : "=a"(result)
+                 : "a"(number), "b"(arg1), "c"(arg2)
+                 : "memory");
+
+    return result;
+}
+
+static inline unsigned int syscall3(unsigned int number, unsigned int arg1,
+                                    unsigned int arg2, unsigned int arg3) {
+    unsigned int result;
+
+    asm volatile("int $0x80"
+                 : "=a"(result)
                  : "a"(number), "b"(arg1), "c"(arg2), "d"(arg3)
                  : "memory");
+
+    return result;
 }
 
 // temu libc
 void print_char(char c) { syscall1(1, (unsigned char)c); }
 void clear_screen() { syscall0(3); }
+char get_char() { return (char)syscall0(4); }
 void print_str(const char *string, unsigned int x, unsigned int y) {
     syscall3(2, (unsigned int)string, x, y);
 }
 
+static inline unsigned int syscall_test(unsigned int value) {
+    unsigned int result;
+
+    asm volatile("int $0x80" : "=a"(result) : "a"(5), "b"(value) : "memory");
+
+    return result;
+}
+
+/*
 extern "C" void program_start() {
+    clear_screen();
 
-    /*
-    volatile unsigned int *bad = (unsigned int *)0xDEADBEEF;
+    unsigned int result = syscall_test(1000);
 
-    // write to an unmapped addr
-    *bad = 123;
-    */
+    char buffer[20];
+    int_to_string(result, buffer);
 
-    print_str("Hello from Ring 3!", 10, 5);
+    print_str("Syscall returned: ", 0, 0);
+    print_str(buffer, 18, 0);
 
     while (1)
-        clear_screen();
-    // Halting is illegal as a ring3 user haha
-    // asm volatile("hlt");
+        ;
 }
-/*
+*/
+
 extern "C" void program_start() {
     char buffer[100];
     char result_str[100];
-
-    ttos::VGA_Clear();
-    ttos::VGA_Print("SCAN CODE: ", 0, 0);
 
     unsigned int pointer = 0;
 
     buffer[0] = '\0';
     result_str[0] = '\0';
 
+    clear_screen();
+
+    print_str("Tung Tung Calculator: ", 0, 0);
+    print_str("Result: ", 0, 5);
+
     while (1) {
-        ttos::VGA_Clear();
+        char c = get_char();
 
-        ttos::VGA_Print("Tung Tung Calculator: ", 0, 0);
-        ttos::VGA_Print(buffer, sizeof("Tung Tung Calculator: ") - 1, 0);
+        if (c == 0)
+            continue;
 
-        ttos::VGA_Print("Result: ", 0, 5);
-        ttos::VGA_Print(result_str, sizeof("Result: ") - 1, 5);
+        if (c == '\b') {
+            if (pointer > 0) {
+                pointer--;
+                buffer[pointer] = '\0';
 
-        char c = ttos::Keyboard_Read();
+                print_str("                                                    "
+                          "                            ",
+                          22, 0);
+                print_str(buffer, 22, 0);
+            }
+        } else if (c == '\n') {
+            int result = doMath(buffer);
+            int_to_string(result, result_str);
 
-        if (c != 0) {
-            if (c == '\b') {
-                if (pointer > 0) {
-                    pointer--;
-                    buffer[pointer] = '\0';
-                }
-            } else if (c == '\n') {
-                int result = doMath(buffer);
-                int_to_string(result, result_str);
-            } else {
+            print_str("                                                        "
+                      "                        ",
+                      8, 5);
+            print_str(result_str, 8, 5);
+        } else {
+            if (pointer < sizeof(buffer) - 1) {
                 buffer[pointer++] = c;
                 buffer[pointer] = '\0';
+
+                print_str("                                                    "
+                          "                            ",
+                          22, 0);
+                print_str(buffer, 22, 0);
             }
         }
     }
 }
-*/

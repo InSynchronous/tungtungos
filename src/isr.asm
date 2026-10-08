@@ -66,5 +66,7 @@ syscall_isr:
 
     call syscall_handler
 
+    mov [esp + 28], eax
+
     popa
     iretd

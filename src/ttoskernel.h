@@ -22,7 +22,7 @@ extern "C" void page_fault_isr();
 
 // User ISR
 extern "C" void syscall_isr();
-extern "C" void syscall_handler(); // called by isr
+extern "C" unsigned int syscall_handler(); // called by isr
 
 enum class KernelFault : unsigned int {
     DivideByZero = 0,
@@ -47,6 +47,21 @@ struct IDTPointer {
     unsigned int base;
 } __attribute__((packed));
 
+static const char keyboard_map[128] = {
+    0,   27,  '1',  '2',  '3',  '4', '5', '6', '7',  '8', '9', '0',
+    '-', '+', '\b', '\t', 'q',  'w', 'e', 'r', 't',  'y', 'u', 'i',
+    'o', 'p', '[',  ']',  '\n', 0,   'a', 's',
+
+    'd', 'f', 'g',  'h',  'j',  'k', 'l', ';', '\'', '`', 0,   '\\',
+    'z', 'x', 'c',  'v',  'b',  'n', 'm', ',', '.',  '/', 0,   '*',
+    0,   ' ', 0,    0,    0,    0,   0,   0,   0,    0,   0,   0,
+    0,   0,   0,    0,    0,    0,   0,   0,   0,    0,   0,   0,
+    0,   0,   0,    0,    0,    0,   0,   0,   0,    0,   0,   0,
+    0,   0,   0,    0,    0,    0,   0,   0,   0,    0,   0,   0};
+
+unsigned char inb(unsigned short port);
+void outb(unsigned short port, unsigned char value);
+
 /*
  * @brief Initializes the Programmable Interval Timer
  *
@@ -60,6 +75,8 @@ void PIT_Init(unsigned int frequency);
  * @return The keyboard scan code.
  */
 char Keyboard_Read();
+
+void Keyboard_Init();
 
 /* *
  * @brief Set's the color of the VGA cursor in the text buffer

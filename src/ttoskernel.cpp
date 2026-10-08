@@ -10,6 +10,8 @@ extern "C" void kernel_start() {
     ttos::VGA_Clear();
     ttos::VGA_Print(string, 0, 0);
 
+    ttos::Keyboard_Init();
+
     ttos::Paging_Init();
 
     ttos::IDT_Init();
@@ -56,40 +58,78 @@ extern "C" void kernel_panic(KernelFault fault) {
     ttos::CPU_halt();
 }
 
-extern "C" void syscall_handler() {
-    unsigned int syscall_number; // todo:figure it out
+extern "C" unsigned int syscall_handler() {
+    unsigned int syscall_number;
+
     asm volatile("mov %%eax, %0" : "=r"(syscall_number));
 
     if (syscall_number == 1) {
-        // Syscall 1; Print character
         unsigned int character;
+
         asm volatile("mov %%ebx, %0" : "=r"(character));
 
         ttos::VGA_Write((char)character, 0, 20);
+        return 0;
     }
 
     if (syscall_number == 2) {
         const char *string;
-        unsigned int x, y;
+        unsigned int x;
+        unsigned int y;
+
         asm volatile("mov %%ebx, %0" : "=r"(string));
         asm volatile("mov %%ecx, %0" : "=r"(x));
         asm volatile("mov %%edx, %0" : "=r"(y));
 
         ttos::VGA_Print(string, x, y);
+        return 0;
     }
 
     if (syscall_number == 3) {
         ttos::VGA_Clear();
+        return 0;
     }
+
+    if (syscall_number == 4) {
+        return (char)ttos::Keyboard_Read();
+    }
+
+    if (syscall_number == 5) {
+        unsigned int value;
+
+        asm volatile("mov %%ebx, %0" : "=r"(value));
+
+        return value + 100;
+    }
+
+    return 0;
 }
 
+volatile char keyboard_buffer[128];
+volatile unsigned int keyboard_read_pos = 0;
+volatile unsigned int keyboard_write_pos = 0;
+
 extern "C" void keyboard_handler() {
-    ttos::VGA_Print("Inturrupt recieved. Over and out", 10, 10);
+    unsigned char scan_code = ttos::inb(0x60);
+
+    if (scan_code < 128) {
+        char c = ttos::keyboard_map[scan_code];
+
+        if (c != 0) {
+            unsigned int next = (keyboard_write_pos + 1) % 128;
+
+            if (next != keyboard_read_pos) {
+                keyboard_buffer[keyboard_write_pos] = c;
+                keyboard_write_pos = next;
+            }
+        }
+    }
+
+    // EOI
+    ttos::outb(0x20, 0x20);
 }
 
 namespace ttos {
-namespace {
-// Internal functions.
 unsigned char inb(unsigned short port) {
     unsigned char value;
 
@@ -102,20 +142,6 @@ unsigned char inb(unsigned short port) {
 void outb(unsigned short port, unsigned char value) {
     asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
 }
-
-static const char keyboard_map[128] = {
-    0,   27,  '1',  '2',  '3',  '4', '5', '6', '7',  '8', '9', '0',
-    '-', '+', '\b', '\t', 'q',  'w', 'e', 'r', 't',  'y', 'u', 'i',
-    'o', 'p', '[',  ']',  '\n', 0,   'a', 's',
-
-    'd', 'f', 'g',  'h',  'j',  'k', 'l', ';', '\'', '`', 0,   '\\',
-    'z', 'x', 'c',  'v',  'b',  'n', 'm', ',', '.',  '/', 0,   '*',
-    0,   ' ', 0,    0,    0,    0,   0,   0,   0,    0,   0,   0,
-    0,   0,   0,    0,    0,    0,   0,   0,   0,    0,   0,   0,
-    0,   0,   0,    0,    0,    0,   0,   0,   0,    0,   0,   0,
-    0,   0,   0,    0,    0,    0,   0,   0,   0,    0,   0,   0};
-
-} // namespace
 
 void VGA_SetColor(unsigned char color) { vga_color = color; }
 
@@ -157,16 +183,20 @@ void CPU_halt() {
     }
 }
 
+void Keyboard_Init() {
+    while (inb(0x64) & 0x01)
+        inb(0x60);
+}
+
 char Keyboard_Read() {
-    while (!(inb(0x64) & 1))
-        ;
-
-    unsigned char scan_code = inb(0x60);
-
-    if (scan_code & 0x80)
+    if (keyboard_read_pos == keyboard_write_pos)
         return 0;
 
-    return keyboard_map[scan_code];
+    char c = keyboard_buffer[keyboard_read_pos];
+
+    keyboard_read_pos = (keyboard_read_pos + 1) % 128;
+
+    return c;
 }
 
 void PIT_Init(unsigned int frequency) {
