@@ -56,6 +56,19 @@ extern "C" void kernel_panic(KernelFault fault) {
     ttos::CPU_halt();
 }
 
+extern "C" void syscall_handler() {
+    unsigned int syscall_number; // todo:figure it out
+    asm volatile("mov %%eax, %0" : "=r"(syscall_number));
+
+    if (syscall_number == 1) {
+        // Syscall 1; Print character
+        unsigned int character;
+        asm volatile("mov %%ebx, %0" : "=r"(character));
+
+        ttos::VGA_Write((char)character, 0, 20);
+    }
+}
+
 extern "C" void keyboard_handler() {
     ttos::VGA_Print("Inturrupt recieved. Over and out", 10, 10);
 }
@@ -165,6 +178,14 @@ void IDT_SetGate(unsigned char vector, unsigned int handler) {
     idt[vector].offset_high = (handler >> 16) & 0xFFFF;
 }
 
+void IDT_SetUserGate(unsigned char vector, unsigned int handler) {
+    idt[vector].offset_low = handler & 0xFFFF;
+    idt[vector].selector = 0x08;
+    idt[vector].zero = 0;
+    idt[vector].type_attr = 0xEE; // Present, DPL=3, 32-bit interrupt gate
+    idt[vector].offset_high = (handler >> 16) & 0xFFFF;
+}
+
 void IDT_Load() {
     idt_ptr.limit = sizeof(idt) - 1;
     idt_ptr.base = (unsigned int)&idt; // ignore lsp warning; 32 bit code
@@ -185,6 +206,7 @@ void IDT_Init() {
     IDT_SetGate(0x00, (unsigned int)divide_error_isr);
     IDT_SetGate(0x0D, (unsigned int)general_protection_isr);
     IDT_SetGate(0x0E, (unsigned int)page_fault_isr);
+    IDT_SetUserGate(0x80, (unsigned int)syscall_isr);
 
     IDT_Load();
 }

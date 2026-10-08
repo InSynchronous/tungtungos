@@ -4,9 +4,11 @@ global keyboard_isr
 global divide_error_isr
 global general_protection_isr
 global page_fault_isr
+global syscall_isr
 
 extern keyboard_handler
 extern kernel_panic
+extern syscall_handler
 
 keyboard_isr:
     pusha
@@ -57,4 +59,12 @@ page_fault_isr:
     mov al, 0x20
     out 0x20, al
 
+    iretd
+
+syscall_isr:
+    pusha
+
+    call syscall_handler
+
+    popa
     iretd

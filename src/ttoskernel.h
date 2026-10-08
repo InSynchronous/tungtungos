@@ -20,6 +20,10 @@ extern "C" void divide_error_isr();
 extern "C" void general_protection_isr();
 extern "C" void page_fault_isr();
 
+// User ISR
+extern "C" void syscall_isr();
+extern "C" void syscall_handler(); // called by isr
+
 enum class KernelFault : unsigned int {
     DivideByZero = 0,
     GeneralProtection = 1,
@@ -112,6 +116,8 @@ void CPU_halt();
  * @param handler Address of the interrupt handler.
  */
 void IDT_SetGate(unsigned char vector, unsigned int handler);
+
+void IDT_SetUserGate(unsigned char vector, unsigned int handler);
 
 /**
  * @brief Initializes and loads the Interrupt Descriptor Table.

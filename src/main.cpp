@@ -121,7 +121,15 @@ void int_to_string(int value, char *buffer) {
     buffer[j] = '\0';
 }
 
+static inline void syscall1(unsigned int number, unsigned int arg1) {
+    asm volatile("int $0x80" : : "a"(number), "b"(arg1) : "memory");
+}
+
+// temu libc
+void print_char(char c) { syscall1(1, (unsigned char)c); }
+
 extern "C" void program_start() {
+
     /*
     volatile unsigned int *bad = (unsigned int *)0xDEADBEEF;
 
@@ -129,8 +137,11 @@ extern "C" void program_start() {
     *bad = 123;
     */
 
+    print_char('H');
+
     while (1)
-        ;
+        asm volatile("nop");
+    // Halting is illegal as a ring3 user haha
     // asm volatile("hlt");
 }
 /*
