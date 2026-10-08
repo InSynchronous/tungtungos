@@ -284,34 +284,48 @@ void PIC_Init() {
 
 // Paging
 alignas(4096) unsigned int page_directory[1024];
-alignas(4096) unsigned int page_table[1024];
+alignas(4096) unsigned int kernel_page_table[1024];
+alignas(4096) unsigned int user_page_table[1024];
 
 void Paging_Init() {
-    // clear table out
+    // clear everything
     for (int i = 0; i < 1024; i++) {
-        page_table[i] = 0;
         page_directory[i] = 0;
+        kernel_page_table[i] = 0;
+        user_page_table[i] = 0;
     }
 
-    for (int i = 0; i < 1024; i++) {
-        // FOR NOW LET THE USER READ KERNEL MEMORY
-        page_table[i] = (i * 0x1000) | 0x7;
+    // kernel: 0x00000000 - 0x003FFFFF
+    // keep NULL unmapped
+    for (unsigned int i = 1; i < 1024; i++) {
+        unsigned int address = i * 0x1000;
+
+        // Present + Writable, Supervisor-only
+        kernel_page_table[i] = address | 0x3;
     }
 
-    // directory 0 = table
-    page_directory[0] = ((unsigned int)page_table) | 0x7;
+    // current Ring 3 program lives around 0x8000.
+    for (unsigned int i = 8; i < 32; i++) {
+        unsigned int address = i * 0x1000;
 
-    // load page directory into CR3
+        // Present + Writable + User
+        kernel_page_table[i] = address | 0x7;
+    }
+
+    // page directory 0
+    page_directory[0] = ((unsigned int)kernel_page_table) | 0x7;
+
+    // 0x400000 - 0x7FFFFF unmapped for now.
+    page_directory[1] = 0;
+
     asm volatile("mov %0, %%cr3" : : "r"(page_directory) : "memory");
 
     unsigned int cr0;
 
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
 
-    // set the bit high
     cr0 |= 0x80000000; // CR0.PG
 
     asm volatile("mov %0, %%cr0" : : "r"(cr0) : "memory");
 }
-
 } // namespace ttos

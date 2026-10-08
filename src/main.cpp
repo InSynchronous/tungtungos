@@ -210,6 +210,13 @@ extern "C" void program_start() {
     print_str("Tung Tung Calculator: ", 0, 0);
     print_str("Result: ", 0, 5);
 
+    //  cause a page fault by accessing kernel owned memory
+    /*
+    unsigned char *vga = (unsigned char *)0xB8000;
+    vga = nullptr;
+    *vga = 5;
+    */
+
     while (1) {
         char c = get_char();
 
