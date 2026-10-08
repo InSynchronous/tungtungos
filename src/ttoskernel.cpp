@@ -67,6 +67,20 @@ extern "C" void syscall_handler() {
 
         ttos::VGA_Write((char)character, 0, 20);
     }
+
+    if (syscall_number == 2) {
+        const char *string;
+        unsigned int x, y;
+        asm volatile("mov %%ebx, %0" : "=r"(string));
+        asm volatile("mov %%ecx, %0" : "=r"(x));
+        asm volatile("mov %%edx, %0" : "=r"(y));
+
+        ttos::VGA_Print(string, x, y);
+    }
+
+    if (syscall_number == 3) {
+        ttos::VGA_Clear();
+    }
 }
 
 extern "C" void keyboard_handler() {

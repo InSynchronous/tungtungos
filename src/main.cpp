@@ -121,12 +121,33 @@ void int_to_string(int value, char *buffer) {
     buffer[j] = '\0';
 }
 
+static inline void syscall0(unsigned int number) {
+    asm volatile("int $0x80" : : "a"(number));
+}
+
 static inline void syscall1(unsigned int number, unsigned int arg1) {
     asm volatile("int $0x80" : : "a"(number), "b"(arg1) : "memory");
 }
 
+static inline void syscall2(unsigned int number, unsigned int arg1,
+                            unsigned int arg2) {
+    asm volatile("int $0x80" : : "a"(number), "b"(arg1), "c"(arg2) : "memory");
+}
+
+static inline void syscall3(unsigned int number, unsigned int arg1,
+                            unsigned int arg2, unsigned int arg3) {
+    asm volatile("int $0x80"
+                 :
+                 : "a"(number), "b"(arg1), "c"(arg2), "d"(arg3)
+                 : "memory");
+}
+
 // temu libc
 void print_char(char c) { syscall1(1, (unsigned char)c); }
+void clear_screen() { syscall0(3); }
+void print_str(const char *string, unsigned int x, unsigned int y) {
+    syscall3(2, (unsigned int)string, x, y);
+}
 
 extern "C" void program_start() {
 
@@ -137,10 +158,10 @@ extern "C" void program_start() {
     *bad = 123;
     */
 
-    print_char('H');
+    print_str("Hello from Ring 3!", 10, 5);
 
     while (1)
-        asm volatile("nop");
+        clear_screen();
     // Halting is illegal as a ring3 user haha
     // asm volatile("hlt");
 }
