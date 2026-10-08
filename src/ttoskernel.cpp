@@ -15,9 +15,9 @@ extern "C" void kernel_start() {
     ttos::IDT_Init();
     ttos::PIC_Init();
 
-    asm volatile("sti");
-
-    program_start();
+    // don't enable interrupts yet
+    // asm volatile("sti");
+    enter_user_mode();
 }
 
 extern "C" void kernel_panic(KernelFault fault) {
@@ -228,11 +228,12 @@ void Paging_Init() {
     }
 
     for (int i = 0; i < 1024; i++) {
-        page_table[i] = (i * 0x1000) | 0x3;
+        // FOR NOW LET THE USER READ KERNEL MEMORY
+        page_table[i] = (i * 0x1000) | 0x7;
     }
 
     // directory 0 = table
-    page_directory[0] = ((unsigned int)page_table) | 0x3;
+    page_directory[0] = ((unsigned int)page_table) | 0x7;
 
     // load page directory into CR3
     asm volatile("mov %0, %%cr3" : : "r"(page_directory) : "memory");

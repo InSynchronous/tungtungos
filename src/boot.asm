@@ -21,7 +21,7 @@ start:
     mov es, ax
 
     mov ah, 0x02       ; BIOS read
-    mov al, 8          ; 6 sector
+    mov al, 12          ; 12 sector
     mov ch, 0
     mov cl, 2          ; sector 2
     mov dh, 0
@@ -100,6 +100,30 @@ gdt_data:
     db 0x00
     db 10010010b
     db 11001111b
+    db 0x00
+
+gdt_user_code:
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 11111010b
+    db 11001111b
+    db 0x00
+
+gdt_user_data:
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 11110010b
+    db 11001111b
+    db 0x00
+
+gdt_tss:
+    dw 0x0067
+    dw 0x5000
+    db 0x00
+    db 10001001b
+    db 00000000b
     db 0x00
 
 gdt_end:

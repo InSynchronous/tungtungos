@@ -6,6 +6,8 @@ TTOS Kernel. Userspace begins in `main.cpp`
 
 extern "C" void kernel_start();
 
+extern "C" void enter_user_mode();
+
 // implemented in assembly; inturrupt subroutine
 // needs to be asm in order to push all the registers to the stack since we get
 // inturrupted by something (keyboard press)

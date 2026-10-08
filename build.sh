@@ -4,10 +4,10 @@ set -e
 
 mkdir -p build
 
-echo "[1/7] Assembling bootloader..."
+echo "[1/8] Assembling bootloader..."
 nasm -f bin src/boot.asm -o build/boot.bin
 
-echo "[2/7] Compiling kernel..."
+echo "[2/8] Compiling kernel..."
 g++ -m32 \
     -ffreestanding \
     -fno-pie \
@@ -18,11 +18,15 @@ g++ -m32 \
     -c src/ttoskernel.cpp \
     -o build/ttoskernel.o
 
-echo "[3/7] Assembling ISR..."
+echo "[3/8] Assembling ISR..."
 nasm -f elf32 src/isr.asm \
     -o build/isr.o
 
-echo "[4/7] Compiling program..."
+echo "[4/8] Assembling Ring 3 code..."
+nasm -f elf32 src/user_ring.asm \
+    -o build/user_ring.o
+
+echo "[5/8] Compiling program..."
 g++ -m32 \
     -ffreestanding \
     -fno-pie \
@@ -33,20 +37,21 @@ g++ -m32 \
     -c src/main.cpp \
     -o build/main.o
 
-echo "[5/7] Linking..."
+echo "[6/8] Linking..."
 ld -m elf_i386 \
     -T src/linker.ld \
     build/ttoskernel.o \
     build/isr.o \
+    build/user_ring.o \
     build/main.o \
     -o build/kernel.elf
 
-echo "[6/7] Creating kernel binary..."
+echo "[7/8] Creating kernel binary..."
 objcopy -O binary \
     build/kernel.elf \
     build/kernel.bin
 
-echo "[7/7] Creating disk image..."
+echo "[8/8] Creating disk image..."
 
 dd if=/dev/zero \
    of=build/os.img \
