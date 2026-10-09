@@ -1,4 +1,7 @@
 #pragma once
+#include <cstdint>
+#define uint32_t unsigned int
+#define uint16_t short int
 
 /*
 TTOS Kernel. Userspace begins in `main.cpp`
@@ -20,17 +23,24 @@ extern "C" void divide_error_isr();
 extern "C" void general_protection_isr();
 extern "C" void page_fault_isr();
 
+extern "C" void timer_isr();
+extern "C" void timer_handler();
+
 // User ISR
 extern "C" void syscall_isr();
-extern "C" unsigned int syscall_handler(); // called by isr
+extern "C" uint32_t syscall_handler(unsigned int syscall_number,
+                                    unsigned int arg1, unsigned int arg2,
+                                    unsigned int arg3);
 
-enum class KernelFault : unsigned int {
+enum class KernelFault : uint32_t {
     DivideByZero = 0,
     GeneralProtection = 1,
     PageFault = 2
 };
 
 extern "C" void kernel_panic(KernelFault fault); // called by isr
+
+extern "C" void TSS_Init();
 
 namespace ttos {
 
@@ -44,7 +54,7 @@ struct IDTEntry {
 
 struct IDTPointer {
     unsigned short limit;
-    unsigned int base;
+    uint32_t base;
 } __attribute__((packed));
 
 static const char keyboard_map[128] = {
@@ -62,12 +72,32 @@ static const char keyboard_map[128] = {
 unsigned char inb(unsigned short port);
 void outb(unsigned short port, unsigned char value);
 
+struct TSS {
+    uint32_t prev_tss;
+    uint32_t esp0;
+    uint32_t ss0;
+    uint32_t esp1;
+    uint32_t ss1;
+    uint32_t esp2;
+    uint32_t ss2;
+    uint32_t cr3;
+    uint32_t eip;
+    uint32_t eflags;
+    uint32_t eax, ecx, edx, ebx;
+    uint32_t esp, ebp, esi, edi;
+    uint32_t es, cs, ss, ds, fs, gs;
+    uint32_t ldt;
+    uint16_t trap;
+    uint16_t iomap_base;
+};
+static_assert(sizeof(TSS) == 104, "TSS layout is flawed! TSS won't work");
+
 /*
  * @brief Initializes the Programmable Interval Timer
  *
  * @param frequency The target frequency for the PIT
  */
-void PIT_Init(unsigned int frequency);
+void PIT_Init(uint32_t frequency);
 
 /**
  * @brief Reads a byte from the PS/2 keyboard.
@@ -105,16 +135,16 @@ void VGA_Write(const char character, int x, int y);
 void VGA_Print(const char *string, int x, int y);
 
 /**
- * @brief Prints an unsigned integer in hexadecimal format to the VGA display.
+ * @brief Prints an uint32_teger in hexadecimal format to the VGA display.
  *
  * The value is displayed as an 8-digit hexadecimal number prefixed with
  * "0x".
  *
- * @param value The unsigned integer to print.
+ * @param value The uint32_teger to print.
  * @param x The horizontal VGA character position.
  * @param y The vertical VGA character position.
  */
-void VGA_PrintHex(unsigned int value, int x, int y);
+void VGA_PrintHex(uint32_t value, int x, int y);
 
 /**
  * @brief Clears the entire VGA text screen.
@@ -132,9 +162,9 @@ void CPU_halt();
  * @param vector Interrupt vector number (0-255).
  * @param handler Address of the interrupt handler.
  */
-void IDT_SetGate(unsigned char vector, unsigned int handler);
+void IDT_SetGate(unsigned char vector, uint32_t handler);
 
-void IDT_SetUserGate(unsigned char vector, unsigned int handler);
+void IDT_SetUserGate(unsigned char vector, uint32_t handler);
 
 /**
  * @brief Initializes and loads the Interrupt Descriptor Table.

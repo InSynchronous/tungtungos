@@ -2,7 +2,11 @@
 
 extern "C" void program_start();
 volatile unsigned char *vga = (volatile unsigned char *)0xB8000;
+volatile unsigned char scan_debug[64];
+volatile unsigned int scan_debug_count = 0;
 unsigned char vga_color = 0x0F;
+unsigned int pit_ticks = 0; // relative time
+ttos::TSS *tss = reinterpret_cast<ttos::TSS *>(0x5000);
 
 extern "C" void kernel_start() {
     const char *string = "TTOS VERSION 0.1a: LOADING PROGRAM";
@@ -15,10 +19,13 @@ extern "C" void kernel_start() {
     ttos::Paging_Init();
 
     ttos::IDT_Init();
-    ttos::PIC_Init();
 
-    // don't enable interrupts yet
-    // asm volatile("sti");
+    ttos::PIC_Init();
+    ttos::PIT_Init(100);
+
+    TSS_Init();
+
+    asm volatile("sti");
     enter_user_mode();
 }
 
@@ -58,53 +65,41 @@ extern "C" void kernel_panic(KernelFault fault) {
     ttos::CPU_halt();
 }
 
-extern "C" unsigned int syscall_handler() {
-    unsigned int syscall_number;
-
-    asm volatile("mov %%eax, %0" : "=r"(syscall_number));
-
-    if (syscall_number == 1) {
-        unsigned int character;
-
-        asm volatile("mov %%ebx, %0" : "=r"(character));
-
-        ttos::VGA_Write((char)character, 0, 20);
+extern "C" unsigned int syscall_handler(unsigned int syscall_number,
+                                        unsigned int arg1, unsigned int arg2,
+                                        unsigned int arg3) {
+    switch (syscall_number) {
+    case 1:
+        ttos::VGA_Write((char)arg1, 0, 20);
         return 0;
-    }
 
-    if (syscall_number == 2) {
-        const char *string;
-        unsigned int x;
-        unsigned int y;
-
-        asm volatile("mov %%ebx, %0" : "=r"(string));
-        asm volatile("mov %%ecx, %0" : "=r"(x));
-        asm volatile("mov %%edx, %0" : "=r"(y));
-
-        ttos::VGA_Print(string, x, y);
+    case 2:
+        ttos::VGA_Print((const char *)arg1, (int)arg2, (int)arg3);
         return 0;
-    }
 
-    if (syscall_number == 3) {
+    case 3:
         ttos::VGA_Clear();
         return 0;
-    }
 
-    if (syscall_number == 4) {
-        return (char)ttos::Keyboard_Read();
-    }
+    case 4:
+        return (unsigned char)ttos::Keyboard_Read();
 
-    if (syscall_number == 5) {
-        unsigned int value;
+    case 5:
+        return arg1 + 100;
 
-        asm volatile("mov %%ebx, %0" : "=r"(value));
-
-        return value + 100;
+    case 7:
+        if (arg1 < 80 && arg2 < 25) {
+            for (unsigned int x = arg1; x < 80; x++)
+                ttos::VGA_Write(' ', x, arg2);
+        }
+        return 0;
+    case 8:
+        ttos::VGA_Write((char)arg1, (int)arg2, (int)arg3);
+        return 0;
     }
 
     return 0;
 }
-
 volatile char keyboard_buffer[128];
 volatile unsigned int keyboard_read_pos = 0;
 volatile unsigned int keyboard_write_pos = 0;
@@ -112,21 +107,44 @@ volatile unsigned int keyboard_write_pos = 0;
 extern "C" void keyboard_handler() {
     unsigned char scan_code = ttos::inb(0x60);
 
-    if (scan_code < 128) {
-        char c = ttos::keyboard_map[scan_code];
+    if (scan_code >= 128)
+        return;
 
-        if (c != 0) {
-            unsigned int next = (keyboard_write_pos + 1) % 128;
+    char c = ttos::keyboard_map[scan_code];
+    if (c == 0)
+        return;
 
-            if (next != keyboard_read_pos) {
-                keyboard_buffer[keyboard_write_pos] = c;
-                keyboard_write_pos = next;
-            }
-        }
+    static unsigned int x = 0;
+    x = (x + 1) % 80;
+
+    unsigned int next = (keyboard_write_pos + 1) % 128;
+
+    if (next != keyboard_read_pos) {
+        keyboard_buffer[keyboard_write_pos] = c;
+        keyboard_write_pos = next;
+    }
+}
+extern "C" void timer_handler() {
+    /*
+    ttos::VGA_Print("timer:", 5, 10);
+    ttos::VGA_PrintHex(pit_ticks, 5, 11);
+    */
+    pit_ticks++;
+}
+
+extern "C" void TSS_Init() {
+    volatile unsigned char *p = reinterpret_cast<volatile unsigned char *>(tss);
+
+    for (unsigned int i = 0; i < sizeof(ttos::TSS); i++) {
+        p[i] = 0;
     }
 
-    // EOI
-    ttos::outb(0x20, 0x20);
+    tss->ss0 = 0x10;
+    tss->esp0 = 0x90000;
+    tss->iomap_base = sizeof(ttos::TSS);
+
+    uint16_t selector = 0x28;
+    asm volatile("ltr %0" : : "rm"(selector));
 }
 
 namespace ttos {
@@ -189,12 +207,32 @@ void Keyboard_Init() {
 }
 
 char Keyboard_Read() {
-    if (keyboard_read_pos == keyboard_write_pos)
+    unsigned int flags;
+
+    asm volatile("pushfl\n"
+                 "popl %0\n"
+                 "cli\n"
+                 : "=r"(flags)
+                 :
+                 : "memory");
+
+    if (keyboard_read_pos == keyboard_write_pos) {
+        asm volatile("pushl %0\n"
+                     "popfl\n"
+                     :
+                     : "r"(flags)
+                     : "memory");
         return 0;
+    }
 
     char c = keyboard_buffer[keyboard_read_pos];
-
     keyboard_read_pos = (keyboard_read_pos + 1) % 128;
+
+    asm volatile("pushl %0\n"
+                 "popfl\n"
+                 :
+                 : "r"(flags)
+                 : "memory");
 
     return c;
 }
@@ -250,6 +288,7 @@ void IDT_Init() {
     IDT_SetGate(0x00, (unsigned int)divide_error_isr);
     IDT_SetGate(0x0D, (unsigned int)general_protection_isr);
     IDT_SetGate(0x0E, (unsigned int)page_fault_isr);
+    IDT_SetGate(0x20, (unsigned int)timer_isr);
     IDT_SetUserGate(0x80, (unsigned int)syscall_isr);
 
     IDT_Load();

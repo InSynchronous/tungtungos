@@ -170,6 +170,10 @@ char get_char() { return (char)syscall0(4); }
 void print_str(const char *string, unsigned int x, unsigned int y) {
     syscall3(2, (unsigned int)string, x, y);
 }
+void print_char_at(char c, unsigned int x, unsigned int y) {
+    syscall3(8, (unsigned char)c, x, y);
+}
+void clear_to_end_of_line(unsigned int x, unsigned int y) { syscall2(7, x, y); }
 
 static inline unsigned int syscall_test(unsigned int value) {
     unsigned int result;
@@ -199,7 +203,6 @@ extern "C" void program_start() {
 extern "C" void program_start() {
     char buffer[100];
     char result_str[100];
-
     unsigned int pointer = 0;
 
     buffer[0] = '\0';
@@ -207,50 +210,47 @@ extern "C" void program_start() {
 
     clear_screen();
 
-    print_str("Tung Tung Calculator: ", 0, 0);
-    print_str("Result: ", 0, 5);
-
-    //  cause a page fault by accessing kernel owned memory
-    /*
-    unsigned char *vga = (unsigned char *)0xB8000;
-    vga = nullptr;
-    *vga = 5;
-    */
+    print_str("TTOS VGA SPACING TEST", 0, 0);
+    print_str("22222222222222222222", 0, 2);
+    print_str("ABCDEFGHIJKLMNOPQRST", 0, 3);
+    print_str("Input:", 0, 5);
+    print_str("Result:", 0, 7);
+    print_str("Type an expression and press Enter.", 0, 9);
 
     while (1) {
         char c = get_char();
 
         if (c == 0)
             continue;
+        char hexbuf[4];
+        hexbuf[0] = "0123456789ABCDEF"[((unsigned char)c) >> 4];
+        hexbuf[1] = "0123456789ABCDEF"[c & 0xF];
+        hexbuf[2] = ' ';
+        hexbuf[3] = 0;
+        static unsigned int dbg = 0;
+        print_str(hexbuf, (dbg++ % 25) * 3, 12);
 
         if (c == '\b') {
             if (pointer > 0) {
-                pointer--;
+                --pointer;
                 buffer[pointer] = '\0';
-
-                print_str("                                                    "
-                          "                            ",
-                          22, 0);
-                print_str(buffer, 22, 0);
+                print_char_at(' ', 7 + pointer, 5);
             }
         } else if (c == '\n') {
             int result = doMath(buffer);
             int_to_string(result, result_str);
 
-            print_str("                                                        "
-                      "                        ",
-                      8, 5);
-            print_str(result_str, 8, 5);
-        } else {
-            if (pointer < sizeof(buffer) - 1) {
-                buffer[pointer++] = c;
-                buffer[pointer] = '\0';
+            clear_to_end_of_line(8, 7);
+            print_str(result_str, 8, 7);
 
-                print_str("                                                    "
-                          "                            ",
-                          22, 0);
-                print_str(buffer, 22, 0);
-            }
+            pointer = 0;
+            buffer[0] = '\0';
+            clear_to_end_of_line(7, 5);
+        } else if (pointer < sizeof(buffer) - 1) {
+            buffer[pointer] = c;
+            print_char_at(c, 7 + pointer, 5);
+            ++pointer;
+            buffer[pointer] = '\0';
         }
     }
 }

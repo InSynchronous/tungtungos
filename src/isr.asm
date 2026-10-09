@@ -5,21 +5,20 @@ global divide_error_isr
 global general_protection_isr
 global page_fault_isr
 global syscall_isr
+global timer_isr
 
 extern keyboard_handler
 extern kernel_panic
 extern syscall_handler
+extern timer_handler
 
 keyboard_isr:
     pusha
 
     call keyboard_handler
-
-    popa
-
     mov al, 0x20
     out 0x20, al
-
+    popa
     iretd
 
 divide_error_isr:
@@ -64,9 +63,30 @@ page_fault_isr:
 syscall_isr:
     pusha
 
-    call syscall_handler
+    mov ebp, esp
 
+    push dword [ebp + 20] ; arg3: EDX
+    push dword [ebp + 24] ; arg2: ECX
+    push dword [ebp + 16] ; arg1: EBX
+    push dword [ebp + 28] ; number: EAX
+
+    call syscall_handler
+    add esp, 16
+
+    ; replace saved EAX with syscall result
     mov [esp + 28], eax
 
     popa
+    iretd
+
+timer_isr:
+    pusha
+
+    call timer_handler
+
+    popa
+
+    mov al, 0x20
+    out 0x20, al
+
     iretd

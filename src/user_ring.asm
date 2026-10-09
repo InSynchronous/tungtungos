@@ -28,12 +28,6 @@ section .text
 enter_user_mode:
     cli
 
-    ; select tss stack
-    mov word [TSS + 8], 0x10
-    mov dword [TSS + 4], kernel_stack_top
-    mov ax, TSS_SEL
-    ltr ax
-
     ; load ring 3 data segments
     mov ax, USER_DS
     mov ds, ax
