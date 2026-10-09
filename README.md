@@ -11,7 +11,17 @@ real kernel, launched by the most secure bootloader in the world!
 
 ## How??
 Using a custom bootloader, that does 0 verifications, using legacy BIOS mode, TungTungOS can literally
-load a small c++ kernel witth an in built ring0 program called TungTungCalculator.
+load a small c++ kernel witth an in built ring3 program called TungTungCalculator.
+
+Features:
+ - ps/2 input
+ - PIT 100hz access
+ - IDT setup
+ - 32-bit paging
+ - Ring 0/3 privilege selection
+ - Panics!
+
+![Division by zero kernel panic](images/panic.png)
 
 ## Sign me up
 Install today! Go to the releases tab and get your .iso today, launch with qemu, or run on real
