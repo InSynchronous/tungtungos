@@ -1,7 +1,7 @@
 #pragma once
-#include <cstdint>
 #define uint32_t unsigned int
 #define uint16_t short int
+#define uint8_t char
 
 /*
 TTOS Kernel. Userspace begins in `main.cpp`
@@ -38,9 +38,20 @@ enum class KernelFault : uint32_t {
     PageFault = 2
 };
 
+enum : uint32_t { TASK_UNUSED = 0, TASK_READY = 1 };
+
 extern "C" void kernel_panic(KernelFault fault); // called by isr
 
 extern "C" void TSS_Init();
+
+extern "C" void Tasks_Init();
+
+extern "C" uint32_t scheduler(uint32_t saved_esp);
+
+// called by tasks_init
+extern "C" uint32_t make_initial_context(uint32_t kernel_stack_top,
+                                         uint32_t user_stack_top,
+                                         uint32_t entry);
 
 namespace ttos {
 
@@ -91,6 +102,16 @@ struct TSS {
     uint16_t iomap_base;
 };
 static_assert(sizeof(TSS) == 104, "TSS layout is flawed! TSS won't work");
+
+// 4 bytes per property
+// todo: add an asert to prevent -O3 nonesence
+struct TCB {
+    uint32_t saved_esp;        // +0
+    uint32_t kernel_stack_top; // +4
+    uint32_t user_stack_top;   // +8
+    uint32_t entry;            // +12
+    uint32_t state;            // +16
+};
 
 /*
  * @brief Initializes the Programmable Interval Timer

@@ -3,29 +3,42 @@
 extern "C" void program_start();
 volatile unsigned char *vga = (volatile unsigned char *)0xB8000;
 volatile unsigned char scan_debug[64];
-volatile unsigned int scan_debug_count = 0;
+volatile uint32_t scan_debug_count = 0;
 unsigned char vga_color = 0x0F;
-unsigned int pit_ticks = 0; // relative time
+uint32_t pit_ticks = 0; // relative time
 ttos::TSS *tss = reinterpret_cast<ttos::TSS *>(0x5000);
 
-extern "C" void kernel_start() {
-    const char *string = "TTOS VERSION 0.1a: LOADING PROGRAM";
+#define STACK_SIZE 4096
+#define MAX_TASKS 4
 
+// TODO: infinite taskss and better memory alloc
+static uint32_t task_sizes[MAX_TASKS] = {
+    0x9000 + STACK_SIZE * 1, // task 0
+    0x9000 + STACK_SIZE * 2, // task 1
+    0x9000 + STACK_SIZE * 3, // task 2
+    0x9000 + STACK_SIZE * 4, // task 3
+};
+
+extern "C" {
+
+ttos::TCB *current_tcb;
+ttos::TCB tasks[MAX_TASKS];
+volatile uint32_t task_index = 0; // for now index = process id
+}
+
+extern "C" void kernel_start() {
     ttos::VGA_Clear();
-    ttos::VGA_Print(string, 0, 0);
+    ttos::VGA_Print("TTOS VERSION 0.1a: LOADING PROGRAM", 0, 0);
 
     ttos::Keyboard_Init();
-
     ttos::Paging_Init();
-
     ttos::IDT_Init();
-
     ttos::PIC_Init();
-    ttos::PIT_Init(100);
-
     TSS_Init();
 
-    asm volatile("sti");
+    Tasks_Init();
+    ttos::PIT_Init(100);
+
     enter_user_mode();
 }
 
@@ -50,7 +63,7 @@ extern "C" void kernel_panic(KernelFault fault) {
         break;
 
     case KernelFault::PageFault:
-        unsigned int fault_address;
+        uint32_t fault_address;
 
         asm volatile("mov %%cr2, %0" : "=r"(fault_address));
 
@@ -65,9 +78,8 @@ extern "C" void kernel_panic(KernelFault fault) {
     ttos::CPU_halt();
 }
 
-extern "C" unsigned int syscall_handler(unsigned int syscall_number,
-                                        unsigned int arg1, unsigned int arg2,
-                                        unsigned int arg3) {
+extern "C" uint32_t syscall_handler(unsigned int syscall_number, uint32_t arg1,
+                                    unsigned int arg2, uint32_t arg3) {
     switch (syscall_number) {
     case 1:
         ttos::VGA_Write((char)arg1, 0, 20);
@@ -89,7 +101,7 @@ extern "C" unsigned int syscall_handler(unsigned int syscall_number,
 
     case 7:
         if (arg1 < 80 && arg2 < 25) {
-            for (unsigned int x = arg1; x < 80; x++)
+            for (uint32_t x = arg1; x < 80; x++)
                 ttos::VGA_Write(' ', x, arg2);
         }
         return 0;
@@ -101,8 +113,8 @@ extern "C" unsigned int syscall_handler(unsigned int syscall_number,
     return 0;
 }
 volatile char keyboard_buffer[128];
-volatile unsigned int keyboard_read_pos = 0;
-volatile unsigned int keyboard_write_pos = 0;
+volatile uint32_t keyboard_read_pos = 0;
+volatile uint32_t keyboard_write_pos = 0;
 
 extern "C" void keyboard_handler() {
     unsigned char scan_code = ttos::inb(0x60);
@@ -114,10 +126,10 @@ extern "C" void keyboard_handler() {
     if (c == 0)
         return;
 
-    static unsigned int x = 0;
+    static uint32_t x = 0;
     x = (x + 1) % 80;
 
-    unsigned int next = (keyboard_write_pos + 1) % 128;
+    uint32_t next = (keyboard_write_pos + 1) % 128;
 
     if (next != keyboard_read_pos) {
         keyboard_buffer[keyboard_write_pos] = c;
@@ -135,7 +147,7 @@ extern "C" void timer_handler() {
 extern "C" void TSS_Init() {
     volatile unsigned char *p = reinterpret_cast<volatile unsigned char *>(tss);
 
-    for (unsigned int i = 0; i < sizeof(ttos::TSS); i++) {
+    for (uint32_t i = 0; i < sizeof(ttos::TSS); i++) {
         p[i] = 0;
     }
 
@@ -145,6 +157,89 @@ extern "C" void TSS_Init() {
 
     uint16_t selector = 0x28;
     asm volatile("ltr %0" : : "rm"(selector));
+}
+
+extern "C" uint32_t scheduler(uint32_t saved_esp) {
+    // save esp
+    current_tcb->saved_esp = saved_esp;
+
+    // round robin impl
+    for (uint32_t i = 1; i <= MAX_TASKS; ++i) {
+        uint32_t next = (task_index + i) % MAX_TASKS;
+
+        if (tasks[next].state != TASK_READY)
+            continue;
+
+        task_index = next;
+        current_tcb = &tasks[next];
+
+        tss->esp0 = tasks[next].kernel_stack_top;
+
+        return tasks[next].saved_esp;
+    }
+
+    // if no other processes, resume
+    ttos::VGA_SetColor(0x4F);
+    ttos::VGA_Write('X', 5, 2);
+    // ttos::VGA_SetColor(0x4F);
+
+    tss->esp0 = current_tcb->kernel_stack_top;
+    return current_tcb->saved_esp;
+}
+
+extern "C" uint32_t make_initial_context(uint32_t kernel_stack_top,
+                                         uint32_t user_stack_top,
+                                         uint32_t entry) {
+    uint32_t *sp = reinterpret_cast<uint32_t *>(kernel_stack_top);
+    // push everything to stack. stack memory sp goes DOWN!
+    // lwk spent 50 minutes wondering why sp++ didn't work
+
+    // the iret frame aka the thing iret does
+    *--sp = 0x23;           // User SS
+    *--sp = user_stack_top; // User ESP
+    *--sp = 0x202;          // EFLAGS: reserved bit + IF
+    *--sp = 0x1B;           // User CS
+    *--sp = entry;          // User EIP
+
+    // normal registers
+    *--sp = 0; // EAX
+    *--sp = 0; // ECX
+    *--sp = 0; // EDX
+    *--sp = 0; // EBX
+    *--sp = 0; // original ESP placeholder
+    *--sp = 0; // EBP
+    *--sp = 0; // ESI
+    *--sp = 0; // EDI
+
+    // segment registers
+    *--sp = 0x23; // DS
+    *--sp = 0x23; // ES
+    *--sp = 0x23; // FS
+    *--sp = 0x23; // GS
+
+    return reinterpret_cast<uint32_t>(sp);
+}
+
+extern "C" void Tasks_Init() {
+    for (uint32_t i = 0; i < MAX_TASKS; ++i) {
+        uint32_t base = task_sizes[i];
+
+        tasks[i].kernel_stack_top = base + STACK_SIZE;
+        tasks[i].user_stack_top = base + STACK_SIZE * 2;
+
+        // for now everyone starts at the same entry
+        // todo: implement a safer fix
+        tasks[i].entry = reinterpret_cast<uint32_t>(program_start);
+
+        tasks[i].saved_esp = make_initial_context(
+            tasks[i].kernel_stack_top, tasks[i].user_stack_top, tasks[i].entry);
+
+        tasks[i].state = TASK_READY;
+    }
+
+    task_index = 0;
+    current_tcb = &tasks[0];
+    tss->esp0 = tasks[0].kernel_stack_top;
 }
 
 namespace ttos {
@@ -176,7 +271,7 @@ void VGA_Print(const char *string, int x, int y) {
     }
 }
 
-void VGA_PrintHex(unsigned int value, int x, int y) {
+void VGA_PrintHex(uint32_t value, int x, int y) {
     const char *hex = "0123456789ABCDEF";
 
     VGA_Write('0', x, y);
@@ -207,7 +302,7 @@ void Keyboard_Init() {
 }
 
 char Keyboard_Read() {
-    unsigned int flags;
+    uint32_t flags;
 
     asm volatile("pushfl\n"
                  "popl %0\n"
@@ -237,8 +332,8 @@ char Keyboard_Read() {
     return c;
 }
 
-void PIT_Init(unsigned int frequency) {
-    unsigned int divisor = 1193182 / frequency;
+void PIT_Init(uint32_t frequency) {
+    uint32_t divisor = 1193182 / frequency;
 
     // init
     outb(0x43, 0x36);
@@ -252,7 +347,7 @@ void PIT_Init(unsigned int frequency) {
 struct IDTEntry idt[256];
 struct IDTPointer idt_ptr;
 
-void IDT_SetGate(unsigned char vector, unsigned int handler) {
+void IDT_SetGate(unsigned char vector, uint32_t handler) {
     idt[vector].offset_low = handler & 0xFFFF;
     idt[vector].selector = 0x08; // gdt code
     idt[vector].zero = 0;
@@ -260,7 +355,7 @@ void IDT_SetGate(unsigned char vector, unsigned int handler) {
     idt[vector].offset_high = (handler >> 16) & 0xFFFF;
 }
 
-void IDT_SetUserGate(unsigned char vector, unsigned int handler) {
+void IDT_SetUserGate(unsigned char vector, uint32_t handler) {
     idt[vector].offset_low = handler & 0xFFFF;
     idt[vector].selector = 0x08;
     idt[vector].zero = 0;
@@ -270,7 +365,7 @@ void IDT_SetUserGate(unsigned char vector, unsigned int handler) {
 
 void IDT_Load() {
     idt_ptr.limit = sizeof(idt) - 1;
-    idt_ptr.base = (unsigned int)&idt; // ignore lsp warning; 32 bit code
+    idt_ptr.base = (uint32_t)&idt; // ignore lsp warning; 32 bit code
 
     asm volatile("lidt %0" : : "m"(idt_ptr));
 }
@@ -284,12 +379,12 @@ void IDT_Init() {
         idt[i].offset_high = 0;
     }
 
-    IDT_SetGate(0x21, (unsigned int)keyboard_isr);
-    IDT_SetGate(0x00, (unsigned int)divide_error_isr);
-    IDT_SetGate(0x0D, (unsigned int)general_protection_isr);
-    IDT_SetGate(0x0E, (unsigned int)page_fault_isr);
-    IDT_SetGate(0x20, (unsigned int)timer_isr);
-    IDT_SetUserGate(0x80, (unsigned int)syscall_isr);
+    IDT_SetGate(0x21, (uint32_t)keyboard_isr);
+    IDT_SetGate(0x00, (uint32_t)divide_error_isr);
+    IDT_SetGate(0x0D, (uint32_t)general_protection_isr);
+    IDT_SetGate(0x0E, (uint32_t)page_fault_isr);
+    IDT_SetGate(0x20, (uint32_t)timer_isr);
+    IDT_SetUserGate(0x80, (uint32_t)syscall_isr);
 
     IDT_Load();
 }
@@ -322,9 +417,9 @@ void PIC_Init() {
 }
 
 // Paging
-alignas(4096) unsigned int page_directory[1024];
-alignas(4096) unsigned int kernel_page_table[1024];
-alignas(4096) unsigned int user_page_table[1024];
+alignas(4096) uint32_t page_directory[1024];
+alignas(4096) uint32_t kernel_page_table[1024];
+alignas(4096) uint32_t user_page_table[1024];
 
 void Paging_Init() {
     // clear everything
@@ -336,30 +431,30 @@ void Paging_Init() {
 
     // kernel: 0x00000000 - 0x003FFFFF
     // keep NULL unmapped
-    for (unsigned int i = 1; i < 1024; i++) {
-        unsigned int address = i * 0x1000;
+    for (uint32_t i = 1; i < 1024; i++) {
+        uint32_t address = i * 0x1000;
 
         // Present + Writable, Supervisor-only
         kernel_page_table[i] = address | 0x3;
     }
 
     // current Ring 3 program lives around 0x8000.
-    for (unsigned int i = 8; i < 32; i++) {
-        unsigned int address = i * 0x1000;
+    for (uint32_t i = 8; i < 32; i++) {
+        uint32_t address = i * 0x1000;
 
         // Present + Writable + User
         kernel_page_table[i] = address | 0x7;
     }
 
     // page directory 0
-    page_directory[0] = ((unsigned int)kernel_page_table) | 0x7;
+    page_directory[0] = ((uint32_t)kernel_page_table) | 0x7;
 
     // 0x400000 - 0x7FFFFF unmapped for now.
     page_directory[1] = 0;
 
     asm volatile("mov %0, %%cr3" : : "r"(page_directory) : "memory");
 
-    unsigned int cr0;
+    uint32_t cr0;
 
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
 
