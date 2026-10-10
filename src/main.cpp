@@ -183,24 +183,44 @@ static inline unsigned int syscall_test(unsigned int value) {
     return result;
 }
 
-/*
-extern "C" void program_start() {
-    clear_screen();
-
-    unsigned int result = syscall_test(1000);
-
+extern "C" void program_a_start() {
+    unsigned int n = 0;
     char buffer[20];
-    int_to_string(result, buffer);
 
-    print_str("Syscall returned: ", 0, 0);
-    print_str(buffer, 18, 0);
+    print_str("A (by 2s): ", 0, 1);
 
-    while (1)
-        ;
+    while (1) {
+        int_to_string(n, buffer);
+        print_str(buffer, 11, 1);
+
+        n += 2;
+
+        // shitty msleep
+        for (volatile unsigned int i = 0; i < 3000000; i++)
+            ;
+    }
 }
-*/
 
-extern "C" void program_start() {
+extern "C" void program_b_start() {
+    unsigned int n = 0;
+    char buffer[20];
+
+    print_str("B (by 3s): ", 0, 3);
+
+    while (1) {
+        int_to_string(n, buffer);
+        print_str(buffer, 11, 3);
+
+        n += 3;
+
+        // shitty msleep
+        for (volatile unsigned int i = 0; i < 3000000; i++)
+            ;
+    }
+}
+
+/*
+extern "C" void program_a_start() {
     char buffer[100];
     char result_str[100];
     unsigned int pointer = 0;
@@ -254,3 +274,4 @@ extern "C" void program_start() {
         }
     }
 }
+*/

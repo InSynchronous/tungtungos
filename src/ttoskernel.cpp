@@ -1,6 +1,8 @@
 #include "ttoskernel.h"
 
-extern "C" void program_start();
+extern "C" void program_a_start();
+extern "C" void program_b_start();
+
 volatile unsigned char *vga = (volatile unsigned char *)0xB8000;
 volatile unsigned char scan_debug[64];
 volatile uint32_t scan_debug_count = 0;
@@ -12,12 +14,8 @@ ttos::TSS *tss = reinterpret_cast<ttos::TSS *>(0x5000);
 #define MAX_TASKS 4
 
 // TODO: infinite taskss and better memory alloc
-static uint32_t task_sizes[MAX_TASKS] = {
-    0x9000 + STACK_SIZE * 1, // task 0
-    0x9000 + STACK_SIZE * 2, // task 1
-    0x9000 + STACK_SIZE * 3, // task 2
-    0x9000 + STACK_SIZE * 4, // task 3
-};
+// [base + 4 KiB, base + 8 KiB)
+static uint32_t task_sizes[MAX_TASKS] = {0xA000, 0xC000, 0xE000, 0x10000};
 
 extern "C" {
 
@@ -137,10 +135,10 @@ extern "C" void keyboard_handler() {
     }
 }
 extern "C" void timer_handler() {
-    /*
+
     ttos::VGA_Print("timer:", 5, 10);
     ttos::VGA_PrintHex(pit_ticks, 5, 11);
-    */
+
     pit_ticks++;
 }
 
@@ -179,10 +177,6 @@ extern "C" uint32_t scheduler(uint32_t saved_esp) {
     }
 
     // if no other processes, resume
-    ttos::VGA_SetColor(0x4F);
-    ttos::VGA_Write('X', 5, 2);
-    // ttos::VGA_SetColor(0x4F);
-
     tss->esp0 = current_tcb->kernel_stack_top;
     return current_tcb->saved_esp;
 }
@@ -221,15 +215,19 @@ extern "C" uint32_t make_initial_context(uint32_t kernel_stack_top,
 }
 
 extern "C" void Tasks_Init() {
+    // ab ab
+    uint32_t entries[MAX_TASKS] = {reinterpret_cast<uint32_t>(program_a_start),
+                                   reinterpret_cast<uint32_t>(program_b_start),
+                                   reinterpret_cast<uint32_t>(program_a_start),
+                                   reinterpret_cast<uint32_t>(program_b_start)};
+
     for (uint32_t i = 0; i < MAX_TASKS; ++i) {
         uint32_t base = task_sizes[i];
 
         tasks[i].kernel_stack_top = base + STACK_SIZE;
         tasks[i].user_stack_top = base + STACK_SIZE * 2;
 
-        // for now everyone starts at the same entry
-        // todo: implement a safer fix
-        tasks[i].entry = reinterpret_cast<uint32_t>(program_start);
+        tasks[i].entry = entries[i];
 
         tasks[i].saved_esp = make_initial_context(
             tasks[i].kernel_stack_top, tasks[i].user_stack_top, tasks[i].entry);
@@ -411,9 +409,8 @@ void PIC_Init() {
     outb(0x21, 0xFF);
     outb(0xA1, 0xFF);
 
-    // UNMASK keyboard
-    // todo: more stuff; kernel panics
-    outb(0x21, 0xFD);
+    // UNMASK keyboard AND TIMER
+    outb(0x21, 0xFC);
 }
 
 // Paging

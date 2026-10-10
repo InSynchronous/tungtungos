@@ -2,7 +2,6 @@ bits 32
 KERNEL_DS equ 0x10
 
 global enter_user_mode
-extern program_start
 extern timer_handler
 extern scheduler
 extern current_tcb
