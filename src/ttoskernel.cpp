@@ -2,6 +2,8 @@
 
 extern "C" void program_a_start();
 extern "C" void program_b_start();
+extern "C" void program_c_start();
+extern "C" void program_d_start();
 
 volatile unsigned char *vga = (volatile unsigned char *)0xB8000;
 volatile unsigned char scan_debug[64];
@@ -32,9 +34,9 @@ extern "C" void kernel_start() {
     ttos::Paging_Init();
     ttos::IDT_Init();
     ttos::PIC_Init();
-    TSS_Init();
+    ttos::TSS_Init();
 
-    Tasks_Init();
+    ttos::Tasks_Init();
     ttos::PIT_Init(100);
 
     enter_user_mode();
@@ -142,21 +144,6 @@ extern "C" void timer_handler() {
     pit_ticks++;
 }
 
-extern "C" void TSS_Init() {
-    volatile unsigned char *p = reinterpret_cast<volatile unsigned char *>(tss);
-
-    for (uint32_t i = 0; i < sizeof(ttos::TSS); i++) {
-        p[i] = 0;
-    }
-
-    tss->ss0 = 0x10;
-    tss->esp0 = 0x90000;
-    tss->iomap_base = sizeof(ttos::TSS);
-
-    uint16_t selector = 0x28;
-    asm volatile("ltr %0" : : "rm"(selector));
-}
-
 extern "C" uint32_t scheduler(uint32_t saved_esp) {
     // save esp
     current_tcb->saved_esp = saved_esp;
@@ -212,32 +199,6 @@ extern "C" uint32_t make_initial_context(uint32_t kernel_stack_top,
     *--sp = 0x23; // GS
 
     return reinterpret_cast<uint32_t>(sp);
-}
-
-extern "C" void Tasks_Init() {
-    // ab ab
-    uint32_t entries[MAX_TASKS] = {reinterpret_cast<uint32_t>(program_a_start),
-                                   reinterpret_cast<uint32_t>(program_b_start),
-                                   reinterpret_cast<uint32_t>(program_a_start),
-                                   reinterpret_cast<uint32_t>(program_b_start)};
-
-    for (uint32_t i = 0; i < MAX_TASKS; ++i) {
-        uint32_t base = task_sizes[i];
-
-        tasks[i].kernel_stack_top = base + STACK_SIZE;
-        tasks[i].user_stack_top = base + STACK_SIZE * 2;
-
-        tasks[i].entry = entries[i];
-
-        tasks[i].saved_esp = make_initial_context(
-            tasks[i].kernel_stack_top, tasks[i].user_stack_top, tasks[i].entry);
-
-        tasks[i].state = TASK_READY;
-    }
-
-    task_index = 0;
-    current_tcb = &tasks[0];
-    tss->esp0 = tasks[0].kernel_stack_top;
 }
 
 namespace ttos {
@@ -459,4 +420,46 @@ void Paging_Init() {
 
     asm volatile("mov %0, %%cr0" : : "r"(cr0) : "memory");
 }
+
+void TSS_Init() {
+    volatile unsigned char *p = reinterpret_cast<volatile unsigned char *>(tss);
+
+    for (uint32_t i = 0; i < sizeof(ttos::TSS); i++) {
+        p[i] = 0;
+    }
+
+    tss->ss0 = 0x10;
+    tss->esp0 = 0x90000;
+    tss->iomap_base = sizeof(ttos::TSS);
+
+    uint16_t selector = 0x28;
+    asm volatile("ltr %0" : : "rm"(selector));
+}
+
+void Tasks_Init() {
+    // ab ab
+    uint32_t entries[MAX_TASKS] = {reinterpret_cast<uint32_t>(program_a_start),
+                                   reinterpret_cast<uint32_t>(program_b_start),
+                                   reinterpret_cast<uint32_t>(program_c_start),
+                                   reinterpret_cast<uint32_t>(program_d_start)};
+
+    for (uint32_t i = 0; i < MAX_TASKS; ++i) {
+        uint32_t base = task_sizes[i];
+
+        tasks[i].kernel_stack_top = base + STACK_SIZE;
+        tasks[i].user_stack_top = base + STACK_SIZE * 2;
+
+        tasks[i].entry = entries[i];
+
+        tasks[i].saved_esp = make_initial_context(
+            tasks[i].kernel_stack_top, tasks[i].user_stack_top, tasks[i].entry);
+
+        tasks[i].state = TASK_READY;
+    }
+
+    task_index = 0;
+    current_tcb = &tasks[0];
+    tss->esp0 = tasks[0].kernel_stack_top;
+}
+
 } // namespace ttos

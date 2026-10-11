@@ -219,8 +219,13 @@ extern "C" void program_b_start() {
     }
 }
 
-/*
-extern "C" void program_a_start() {
+extern "C" void program_d_start() {
+    while (1) {
+        ;
+    }
+}
+
+extern "C" void program_c_start() {
     char buffer[100];
     char result_str[100];
     unsigned int pointer = 0;
@@ -274,4 +279,3 @@ extern "C" void program_a_start() {
         }
     }
 }
-*/

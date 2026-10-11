@@ -42,10 +42,6 @@ enum : uint32_t { TASK_UNUSED = 0, TASK_READY = 1 };
 
 extern "C" void kernel_panic(KernelFault fault); // called by isr
 
-extern "C" void TSS_Init();
-
-extern "C" void Tasks_Init();
-
 extern "C" uint32_t scheduler(uint32_t saved_esp);
 
 // called by tasks_init
@@ -207,4 +203,14 @@ void PIC_Init();
  */
 void Paging_Init();
 
+/**
+ * @brief initializes task frames
+ */
+void Tasks_Init();
+
+/**
+ * @brief initializes TSS via ltr
+ */
+
+void TSS_Init();
 } // namespace ttos
