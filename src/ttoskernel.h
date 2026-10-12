@@ -107,6 +107,7 @@ struct TCB {
     uint32_t user_stack_top;   // +8
     uint32_t entry;            // +12
     uint32_t state;            // +16
+    uint32_t page_directory;   // +32
 };
 
 /*

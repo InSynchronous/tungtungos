@@ -220,6 +220,8 @@ extern "C" void program_b_start() {
 }
 
 extern "C" void program_d_start() {
+    volatile unsigned char *vga = (volatile unsigned char *)0xB8000;
+    //*vga = 'F';
     while (1) {
         ;
     }

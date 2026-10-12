@@ -17,7 +17,29 @@ ttos::TSS *tss = reinterpret_cast<ttos::TSS *>(0x5000);
 
 // TODO: infinite taskss and better memory alloc
 // [base + 4 KiB, base + 8 KiB)
-static uint32_t task_sizes[MAX_TASKS] = {0xA000, 0xC000, 0xE000, 0x10000};
+alignas(4096) uint32_t kernel_page_directory[1024];
+alignas(4096) uint32_t kernel_page_table[1024];
+
+// userspace programs
+alignas(4096) uint32_t program_a_page_directory[1024];
+alignas(4096) uint32_t program_a_page_table[1024];
+
+alignas(4096) uint32_t program_b_page_directory[1024];
+alignas(4096) uint32_t program_b_page_table[1024];
+
+alignas(4096) uint32_t program_c_page_directory[1024];
+alignas(4096) uint32_t program_c_page_table[1024];
+
+alignas(4096) uint32_t program_d_page_directory[1024];
+alignas(4096) uint32_t program_d_page_table[1024];
+
+extern "C" uint32_t selected_directory = (uint32_t)kernel_page_directory;
+
+// Very sketchy solution:
+// Compiler will likely place these guys somewhere in .bss, which paging setup
+// makes sure is r/w by ring 3
+alignas(16) static unsigned char kernel_stacks[MAX_TASKS][STACK_SIZE];
+alignas(16) static unsigned char user_stacks[MAX_TASKS][STACK_SIZE];
 
 extern "C" {
 
@@ -39,6 +61,7 @@ extern "C" void kernel_start() {
     ttos::Tasks_Init();
     ttos::PIT_Init(100);
 
+    asm volatile("mov %0, %%cr3" : : "r"(tasks[0].page_directory) : "memory");
     enter_user_mode();
 }
 
@@ -159,6 +182,12 @@ extern "C" uint32_t scheduler(uint32_t saved_esp) {
         current_tcb = &tasks[next];
 
         tss->esp0 = tasks[next].kernel_stack_top;
+
+        // change page
+        asm volatile("mov %0, %%cr3"
+                     :
+                     : "r"(current_tcb->page_directory)
+                     : "memory");
 
         return tasks[next].saved_esp;
     }
@@ -374,50 +403,83 @@ void PIC_Init() {
     outb(0x21, 0xFC);
 }
 
-// Paging
-alignas(4096) uint32_t page_directory[1024];
-alignas(4096) uint32_t kernel_page_table[1024];
-alignas(4096) uint32_t user_page_table[1024];
-
 void Paging_Init() {
     // clear everything
     for (int i = 0; i < 1024; i++) {
-        page_directory[i] = 0;
+        kernel_page_directory[i] = 0;
         kernel_page_table[i] = 0;
-        user_page_table[i] = 0;
+
+        program_a_page_directory[i] = 0;
+        program_a_page_table[i] = 0;
+
+        program_b_page_directory[i] = 0;
+        program_b_page_table[i] = 0;
+
+        program_c_page_directory[i] = 0;
+        program_c_page_table[i] = 0;
+
+        program_d_page_directory[i] = 0;
+        program_d_page_table[i] = 0;
     }
 
     // kernel: 0x00000000 - 0x003FFFFF
-    // keep NULL unmapped
+    // keep NULL unmapped (hence i=1)
     for (uint32_t i = 1; i < 1024; i++) {
-        uint32_t address = i * 0x1000;
-
-        // Present + Writable, Supervisor-only
+        uint32_t address = i * 0x1000; // inc 1000
+        // 11 = read write on, supervisor only
         kernel_page_table[i] = address | 0x3;
+        program_a_page_table[i] = address | 0x3;
+        program_b_page_table[i] = address | 0x3;
+        program_c_page_table[i] = address | 0x3;
+        program_d_page_table[i] = address | 0x3;
     }
 
-    // current Ring 3 program lives around 0x8000.
+    // page directory 0 points to kernel page table
+    // if kernel needs more memory add more page tables
+    kernel_page_directory[0] = ((uint32_t)kernel_page_table) | 0x7;
+
+    // keep the rest unmapped
+    kernel_page_directory[1] = 0;
+
+    // now for user programs, let them access the rest
+    // note: we start at i=8 to avoid overlap in terms of hardware addresses.
+    // if somehow the kernel uses too much memory then it could lead to physical
+    // address overlap for now let it be
+    // also stop at i=32 because things like vga memory are at like i=184
+    // (0xB8000 / 0x1000 = 184)
     for (uint32_t i = 8; i < 32; i++) {
-        uint32_t address = i * 0x1000;
+        uint32_t address = i * 0x1000; // inc 1000
 
-        // Present + Writable + User
-        kernel_page_table[i] = address | 0x7;
+        program_a_page_table[i] = address | 0x7; // r/w for ring3 is allowed
+        program_b_page_table[i] = address | 0x7; // r/w for ring3 is allowed
+        program_c_page_table[i] = address | 0x7; // r/w for ring3 is allowed
+        program_d_page_table[i] = address | 0x7; // r/w for ring3 is allowed
     }
 
-    // page directory 0
-    page_directory[0] = ((uint32_t)kernel_page_table) | 0x7;
+    program_a_page_directory[0] = ((uint32_t)program_a_page_table) | 0x7;
+    program_a_page_directory[1] = 0;
 
-    // 0x400000 - 0x7FFFFF unmapped for now.
-    page_directory[1] = 0;
+    program_b_page_directory[0] = ((uint32_t)program_b_page_table) | 0x7;
+    program_b_page_directory[1] = 0;
 
-    asm volatile("mov %0, %%cr3" : : "r"(page_directory) : "memory");
+    program_c_page_directory[0] = ((uint32_t)program_c_page_table) | 0x7;
+    program_c_page_directory[1] = 0;
+
+    program_d_page_directory[0] = ((uint32_t)program_d_page_table) | 0x7;
+    program_d_page_directory[1] = 0;
+
+    // LOAD KERNEL PAGE DIECTORY BY DEFUALT
+    asm volatile("mov %0, %%cr3" : : "r"(selected_directory) : "memory");
 
     uint32_t cr0;
 
+    // save cr0 = cr0
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
 
+    // set paging on
     cr0 |= 0x80000000; // CR0.PG
 
+    // save cr0 = cr0
     asm volatile("mov %0, %%cr0" : : "r"(cr0) : "memory");
 }
 
@@ -443,11 +505,14 @@ void Tasks_Init() {
                                    reinterpret_cast<uint32_t>(program_c_start),
                                    reinterpret_cast<uint32_t>(program_d_start)};
 
-    for (uint32_t i = 0; i < MAX_TASKS; ++i) {
-        uint32_t base = task_sizes[i];
+    uint32_t *directories[MAX_TASKS] = {
+        program_a_page_directory, program_b_page_directory,
+        program_c_page_directory, program_d_page_directory};
 
-        tasks[i].kernel_stack_top = base + STACK_SIZE;
-        tasks[i].user_stack_top = base + STACK_SIZE * 2;
+    for (uint32_t i = 0; i < MAX_TASKS; ++i) {
+
+        tasks[i].kernel_stack_top = (uint32_t)&kernel_stacks[i][STACK_SIZE];
+        tasks[i].user_stack_top = (uint32_t)&user_stacks[i][STACK_SIZE];
 
         tasks[i].entry = entries[i];
 
@@ -455,6 +520,8 @@ void Tasks_Init() {
             tasks[i].kernel_stack_top, tasks[i].user_stack_top, tasks[i].entry);
 
         tasks[i].state = TASK_READY;
+
+        tasks[i].page_directory = (uint32_t)directories[i];
     }
 
     task_index = 0;

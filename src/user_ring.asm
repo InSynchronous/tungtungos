@@ -6,6 +6,7 @@ extern timer_handler
 extern scheduler
 extern current_tcb
 extern restore_context
+extern selected_directory
 
 USER_CS equ 0x1B
 USER_DS equ 0x23
