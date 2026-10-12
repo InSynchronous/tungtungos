@@ -254,8 +254,6 @@ extern "C" void program_c_start() {
         hexbuf[1] = "0123456789ABCDEF"[c & 0xF];
         hexbuf[2] = ' ';
         hexbuf[3] = 0;
-        static unsigned int dbg = 0;
-        print_str(hexbuf, (dbg++ % 25) * 3, 12);
 
         if (c == '\b') {
             if (pointer > 0) {
