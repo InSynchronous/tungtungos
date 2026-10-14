@@ -1,9 +1,5 @@
 #include "ttoskernel.h"
-
-extern "C" void program_a_start();
-extern "C" void program_b_start();
-extern "C" void program_c_start();
-extern "C" void program_d_start();
+#include "programs.h"
 
 volatile unsigned char *vga = (volatile unsigned char *)0xB8000;
 volatile unsigned char scan_debug[64];
@@ -52,7 +48,17 @@ extern "C" void kernel_start() {
     ttos::VGA_Print("TTOS VERSION 0.1a: LOADING PROGRAM", 0, 0);
 
     ttos::Keyboard_Init();
+
+    // Move the programs before page tables destroy them
+    uint32_t program_image_size = 0;
+    for (uint32_t i = 0; i < MAX_TASKS; ++i) {
+        program_image_size += ttos::programs[i].padded_size;
+    }
+    ttos::kmemcpy((void *)0x30000, (const void *)0xBE00, program_image_size);
+
     ttos::Paging_Init();
+
+    ttos::SSE_Init();
     ttos::IDT_Init();
     ttos::PIC_Init();
     ttos::TSS_Init();
@@ -404,6 +410,15 @@ void PIC_Init() {
 
 void Paging_Init() {
     // clear everything
+    /*
+    VGA_PrintHex((uint32_t)kernel_page_directory, 0, 0);
+    VGA_PrintHex((uint32_t)kernel_page_table, 0, 1);
+    VGA_PrintHex((uint32_t)program_a_page_directory, 0, 2);
+    VGA_PrintHex((uint32_t)program_a_page_table, 0, 3);
+    */
+
+    // fun fact: this code managed to overwrite loaded boot sectors and wasted
+    // an hour of my life
     for (int i = 0; i < 1024; i++) {
         kernel_page_directory[i] = 0;
         kernel_page_table[i] = 0;
@@ -440,40 +455,19 @@ void Paging_Init() {
     // keep the rest unmapped
     kernel_page_directory[1] = 0;
 
-    // now for user programs, let them access the rest
-    // map the loaded kernel image at its existing physical addresses
-    // temp: these user accessible mappings are not isolated from kernel memory
-    for (uint32_t i = 8; i <= 9; i++) {
-        uint32_t address = i * 0x1000;
-
-        // READ ONLY (for users)
-        // This is a hack since rn programs are compiled into the kernel
-        // I inspected the .elf and turns out user programs live roughly near
-        // 0x8000 This is an identity map: 0x8000 translates to 0x8000, setup so
-        // that its read only
-        program_a_page_table[i] = address | 0x5;
-        program_b_page_table[i] = address | 0x5;
-        program_c_page_table[i] = address | 0x5;
-        program_d_page_table[i] = address | 0x5;
-    }
-
-    // Virtual 0x20000 maps to different spots in physical ram
+    // different ram for each stack to avoid dangerous overlap
     program_a_page_table[31] = 0x01000000 | 0x7;
     program_b_page_table[31] = 0x01001000 | 0x7;
     program_c_page_table[31] = 0x01002000 | 0x7;
     program_d_page_table[31] = 0x01003000 | 0x7;
 
     program_a_page_directory[0] = ((uint32_t)program_a_page_table) | 0x7;
-    program_a_page_directory[1] = 0;
 
     program_b_page_directory[0] = ((uint32_t)program_b_page_table) | 0x7;
-    program_b_page_directory[1] = 0;
 
     program_c_page_directory[0] = ((uint32_t)program_c_page_table) | 0x7;
-    program_c_page_directory[1] = 0;
 
     program_d_page_directory[0] = ((uint32_t)program_d_page_table) | 0x7;
-    program_d_page_directory[1] = 0;
 
     // LOAD KERNEL PAGE DIECTORY BY DEFUALT
     asm volatile("mov %0, %%cr3" : : "r"(selected_directory) : "memory");
@@ -488,6 +482,16 @@ void Paging_Init() {
 
     // save cr0 = cr0
     asm volatile("mov %0, %%cr0" : : "r"(cr0) : "memory");
+}
+
+void Paging_Create(uint32_t table, uint32_t physical, uint32_t page_count) {
+    auto *pt = (uint32_t *)table;
+
+    uint32_t first_page = 0x00100000 / 4096;
+
+    for (uint32_t i = 0; i < page_count; ++i) {
+        pt[first_page + i] = (physical + i * 4096) | 0x7;
+    }
 }
 
 void TSS_Init() {
@@ -505,34 +509,74 @@ void TSS_Init() {
     asm volatile("ltr %0" : : "rm"(selector));
 }
 
-void Tasks_Init() {
-    uint32_t entries[MAX_TASKS] = {reinterpret_cast<uint32_t>(program_a_start),
-                                   reinterpret_cast<uint32_t>(program_b_start),
-                                   reinterpret_cast<uint32_t>(program_c_start),
-                                   reinterpret_cast<uint32_t>(program_d_start)};
+void kmemcpy(void *destination, const void *source, uint32_t size) {
+    auto *dst = static_cast<uint8_t *>(destination);
+    auto *src = static_cast<const uint8_t *>(source);
 
+    for (uint32_t i = 0; i < size; ++i) {
+        dst[i] = src[i];
+    }
+}
+
+void Tasks_Init() {
     uint32_t *directories[MAX_TASKS] = {
         program_a_page_directory, program_b_page_directory,
         program_c_page_directory, program_d_page_directory};
+    uint32_t *tables[MAX_TASKS] = {program_a_page_table, program_b_page_table,
+                                   program_c_page_table, program_d_page_table};
 
+    uint32_t destination = 0x00100000;
     for (uint32_t i = 0; i < MAX_TASKS; ++i) {
+
+        auto program = programs[i];
+        uint32_t current_loc = 0x30000 + 512 * program.start_lba;
+
+        // Memcpy the location to somewher page aligned so we can create pages
+        kmemcpy((void *)destination, (const void *)current_loc,
+                program.file_size);
+        volatile uint8_t *loaded = (volatile uint8_t *)destination;
+
+        for (uint32_t j = program.file_size; j < program.memory_size; ++j) {
+            ((uint8_t *)destination)[j] = 0;
+        }
 
         tasks[i].kernel_stack_top = (uint32_t)&kernel_stacks[i][STACK_SIZE];
         tasks[i].user_stack_top = 0x20000;
 
-        tasks[i].entry = entries[i];
+        tasks[i].entry = program.entry_address;
 
         tasks[i].saved_esp = make_initial_context(
             tasks[i].kernel_stack_top, tasks[i].user_stack_top, tasks[i].entry);
 
         tasks[i].state = TASK_READY;
 
+        Paging_Create((uint32_t)tables[i], destination,
+                      program.padded_size / 4096);
         tasks[i].page_directory = (uint32_t)directories[i];
+
+        destination += program.padded_size;
     }
 
     task_index = 0;
     current_tcb = &tasks[0];
     tss->esp0 = tasks[0].kernel_stack_top;
+}
+
+void SSE_Init() {
+    /*
+     * Credit: OSDev Wiki
+     * Some fancy instructions gcc spitsout need this to happen or something
+     */
+    uint32_t cr0, cr4;
+
+    asm volatile("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~(1u << 2);
+    cr0 |= (1u << 1);
+    asm volatile("mov %0, %%cr0" : : "r"(cr0));
+
+    asm volatile("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= (1u << 9) | (1u << 10);
+    asm volatile("mov %0, %%cr4" : : "r"(cr4));
 }
 
 } // namespace ttos

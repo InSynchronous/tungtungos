@@ -68,7 +68,7 @@ echo "[8/8] Appending userspace image..."
 dd if=build/programs.img \
    of=build/os.img \
    bs=512 \
-   seek=32 \ # place at the 32nd sector
+   seek=32 \
    conv=notrunc \
    status=none
 

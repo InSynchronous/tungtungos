@@ -15,7 +15,7 @@ IMAGE = BUILD / "programs.img"
 # programs are aligned to 4096 so that the kernel can just map a virtual page to it
 PAGE_SIZE = 4096
 SECTOR_SIZE = 512
-USER_BASE = 0x00400000
+USER_BASE = 0x00100000
 
 PROGRAMS = [
     ("program_a", USER_SRC / "program_a.cpp"),

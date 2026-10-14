@@ -205,6 +205,12 @@ void PIC_Init();
 void Paging_Init();
 
 /**
+ * @brief Creates an entry into a page directory mapping virtual start addresses
+ * to physical locations of programs
+ */
+void Paging_Create(uint32_t directory, uint32_t physical, uint32_t page_count);
+
+/**
  * @brief initializes task frames
  */
 void Tasks_Init();
@@ -214,4 +220,7 @@ void Tasks_Init();
  */
 
 void TSS_Init();
+
+void kmemcpy(void *destination, const void *source, uint32_t size);
+void SSE_Init();
 } // namespace ttos

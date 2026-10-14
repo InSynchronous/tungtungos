@@ -2,7 +2,7 @@ ENTRY(_start)
 SECTIONS
 {
     /* userspace programs are loaded to this virtual address */
-    . = 0x00400000;
+    . = 0x00100000;
 
     __program_start = .;
 
