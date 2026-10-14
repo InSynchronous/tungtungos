@@ -10,6 +10,8 @@ GENERATED = BUILD / "generated"
 USER_SRC = ROOT / "src" / "user"
 USER_LD = ROOT / "linker" / "user.ld"
 
+STDLIB_SRC = USER_SRC / "stdlib.cpp"
+
 IMAGE = BUILD / "programs.img"
 
 # programs are aligned to 4096 so that the kernel can just map a virtual page to it
@@ -75,8 +77,10 @@ def build_program(name, source):
     # compile userspace programs
     run(CXX, *CXXFLAGS, "-c", str(source), "-o", str(USER_BUILD/f"{name}.o"))
 
+    run(CXX, *CXXFLAGS, "-c", str(STDLIB_SRC), "-o", str(USER_BUILD/"stdlib.o"))
+
     # link userspace programs
-    run(LD,"-m", "elf_i386","-T", str(USER_LD),"-o", str(elf), str(USER_BUILD / f"{name}.o"),)
+    run(LD,"-m", "elf_i386","-T", str(USER_LD),"-o", str(elf), str(USER_BUILD / f"{name}.o"), str(USER_BUILD / "stdlib.o"))
 
     # flatten to .bin
     run(OBJCOPY, "-O", "binary", str(elf), str(binary))

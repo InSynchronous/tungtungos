@@ -1,30 +1,24 @@
 # TungTung OS
-Are you tired of massive bloated Javascript apps ruining your ram usage? Tired of the convinence of a calculator built into google?
-Are you tired of having negative opsec because intel me? tung tung os is so useless, nobody would ever
-hack you
+A 32-Bit, multi-ring, operating system, written from scratch in just assembly and C++, capable
+of running on real hardware, using a custom Bootloader targetting legacy BIOS systems.
 
 ![tung tung calculator demo](images/demo.png)
 
-## WHAT???
-TungTungOS is the solution for you. It runs in 32 bit protectted mode on real x86 hardware, running a
-real kernel, launched by the most secure bootloader in the world!
-
-## How??
-Using a custom bootloader, that does 0 verifications, using legacy BIOS mode, TungTungOS can literally
-load a small c++ kernel witth an in built ring3 program called TungTungCalculator.
-
-Features:
- - ps/2 input
- - PIT 100hz access
- - IDT setup
- - 32-bit paging
- - Ring 0/3 privilege selection
- - Panics!
+## Technical Details
+ - Premtive Multitasking Support
+ - Seperately compiled userspace
+ - Custom Bootloader written in x86 assembly
+ - Keyboard Driver
+ - VGA Teletype Driver
+ - Support for SSE Instructions
+ - Paging
+ - Ring 3 Support with custom syscalls
+ - Kernel Panics:
 
 ![Division by zero kernel panic](images/panic.png)
 
-## Sign me up
-Install today! Go to the releases tab and get your .iso today, launch with qemu, or run on real
+## Sign me up!!
+Install today! Go to the releases tab and get your .img today, launch with qemu, or run on real
 hardware if you dare.
 
 Run on Qemu:
@@ -38,7 +32,10 @@ sudo dd if=<FILE NAME> of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 ## Build
-Ensure `nasm`, `g++`, and any linker is installed. Run:
+Ensure `python3`, `nasm`, `g++`, and any linker that supports intel i386 is installed. Run:
 
-`chmod +x build.sh`
-`./build.sh`
+```sh
+python3 build.py
+chmod +x build.sh
+./build.sh
+```
