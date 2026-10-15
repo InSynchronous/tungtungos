@@ -166,8 +166,10 @@ extern "C" void keyboard_handler() {
 }
 extern "C" void timer_handler() {
 
+    /*
     ttos::VGA_Print("timer:", 5, 10);
     ttos::VGA_PrintHex(pit_ticks, 5, 11);
+    */
 
     pit_ticks++;
 }
